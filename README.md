@@ -92,3 +92,13 @@ Só titulares de conta ativos com acesso IRS podem ler o agregado; familiares co
 Os dados das pessoas desta primeira versão não têm snapshots históricos completos por ano; a UI não permite alterar o nome/NIF/nascimento de pessoas existentes. A evolução para múltiplos exercícios e versões será feita por migrações adicionais, preservando o histórico.
 
 Não existe integração de faturação: o portal não cria documentos fiscais. O bucket não é público e os segredos de serviços externos não pertencem às tabelas ou ao navegador. Rever política de privacidade/retensão e configurar backups antes de introduzir dados reais de clientes.
+
+## Explorar sem configurar Supabase
+
+A rota `/demonstracao` funciona sem variáveis de ambiente ou base de dados. Sem configuração, o endereço inicial abre automaticamente essa demonstração. A entrada real continua em `/entrar`, com ligação de volta ao exemplo. Depois de configurar o Supabase, o endereço inicial passa para a área autenticada.
+
+A demonstração identifica claramente dados fictícios em memória: agregado, rendimentos, imóveis, documentos simulados, mensagens e progresso. Na Gestão também permite simular concessões de módulos e acompanhar alertas. Não tem uploads reais, emails, passwords ou persistência; recarregar repõe os exemplos. As duas aplicações não sincronizam estes dados entre si. A demonstração não abre ou contorna os dados protegidos em `/app`.
+
+### Integração automática Vercel / Supabase
+
+Uma integração automática num projeto Vercel não é necessária no segundo. O segundo projeto pode usar os mesmos valores públicos de URL e chave do primeiro, mantendo o seu próprio `NEXT_PUBLIC_SITE_URL`. O código também aceita os aliases de servidor `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` e `SUPABASE_ANON_KEY`, frequentemente disponibilizados por integrações. Nunca usa a variável genérica `SUPABASE_KEY`, porque o seu tipo seria ambíguo. Chaves `sb_secret_` e JWT com papel diferente de `anon` são recusados por esta configuração.

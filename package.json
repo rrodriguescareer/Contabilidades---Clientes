@@ -7,7 +7,8 @@
     "build": "next build --webpack",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test:db": "node --test tests/database.test.mjs"
+    "test:db": "node --test tests/database.test.mjs",
+    "test:config": "node --test tests/config.test.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.7",
