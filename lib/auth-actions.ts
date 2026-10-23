@@ -12,7 +12,7 @@ export async function signIn(form: FormData) {
   if (failure) error('Não foi possível entrar. Verifique os dados e confirme o seu email.');
   if (IS_MANAGEMENT) {
     const {data,error: denied}=await client.rpc('is_staff');
-    if (denied || !data) {await client.auth.signOut();error('Esta conta não tem acesso à gestão, ou a base de dados ainda não foi preparada.');}
+    if (denied || !data) {await client.auth.signOut();error('Não foi possível autorizar o acesso à gestão. Contacte o responsável.');}
   }
   redirect('/app');
 }

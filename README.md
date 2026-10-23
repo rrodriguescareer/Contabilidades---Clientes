@@ -1,44 +1,39 @@
 # Contabilidades — Gestão de Clientes
 
-Aplicação Next.js 16 + TypeScript para o profissional. Repositório separado do Portal IRS, com design próprio, ligado ao mesmo projeto Supabase.
+Aplicação privada Next.js + TypeScript para gerir clientes e processos, ligada ao mesmo Supabase que o [Portal IRS](https://github.com/rrodriguescareer/Contabilidades---IRS). O acesso exige um utilizador autenticado e autorização de profissional no banco.
 
-## Estado desta primeira versão
+## Publicação no Vercel
 
-Implementado: login e recuperação, proteção da gestão por papel de profissional no banco, aprovação de registos (cria conta + titular + processo IRS numa transação), concessão/revogação de módulos, consulta do agregado e rendimentos, upload/download privado, mensagens, progresso e alertas de 2FA. O cliente inicia o registo na aplicação IRS. Não são utilizados dados demonstrativos no produto.
-
-Ainda não implementado: envio/aceitação de convites de familiares (há registo de pedidos), credenciais fiscais em cofre, formulários fiscais estruturados completos por classe/ano, OCR, anexos diretamente no chat, notificações, Realtime, emissão fiscal, integração de pagamentos e plataforma Empresas. Faturas e pagamentos existentes no banco são apenas consultados. A sessão entre domínios não é automaticamente partilhada; a identidade Auth é a mesma.
-
-## 1. Variáveis no Vercel
-
-Importar este repositório como **Next.js**, diretório raiz, Node.js 24. Não é necessário escolher um template. Em Settings → Environment Variables, configurar nos ambientes pretendidos e depois fazer Redeploy:
+- Importar este repositório, branch `main`, Framework **Next.js**, diretório raiz, Node.js **24**.
+- Build: `npm run build`. O `next start` usa o modo de produção; o Vercel gere o arranque.
+- Configurar as variáveis antes de fazer Redeploy:
 
 | Nome | Valor |
 |---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | `https://rllajahyovpzndbbyvcd.supabase.co` (sem `/rest/v1/`) |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Publishable key do projeto, `sb_publishable_...` |
-| `NEXT_PUBLIC_SITE_URL` | URL pública desta aplicação, com `https://` |
-| `NEXT_PUBLIC_IRS_URL` | URL pública da aplicação IRS |
+| `NEXT_PUBLIC_SUPABASE_URL` | `https://rllajahyovpzndbbyvcd.supabase.co` |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Publishable key do Supabase |
+| `NEXT_PUBLIC_SITE_URL` | URL pública desta aplicação Gestão, com `https://` |
+| `NEXT_PUBLIC_IRS_URL` | URL pública do Portal IRS |
 
-Se o projeto apresentar apenas chaves antigas, usar `NEXT_PUBLIC_SUPABASE_ANON_KEY` em vez de `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. Nunca colocar `service_role`, secret key, JWT secret ou password da base de dados nestas variáveis públicas.
+Em alternativa à publishable, pode usar `NEXT_PUBLIC_SUPABASE_ANON_KEY`. O código também aceita `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` e `SUPABASE_ANON_KEY`, usados por algumas integrações. As duas aplicações usam a mesma URL e chave pública, mantendo `NEXT_PUBLIC_SITE_URL` diferente. Não é necessária uma integração automática Vercel/Supabase para cada projeto.
 
-Sem URL/chave, a aplicação apresenta configuração em falta e não tenta autenticar nem guardar dados. As variáveis do Vercel não são automaticamente copiadas para outros projetos ou para o ambiente local.
+Nunca utilizar `service_role`, secret key ou a password da base de dados no frontend. O código recusa chaves privilegiadas. Sem configuração, o acesso fica indisponível e não são apresentados dados alternativos.
 
-## 2. Preparar o Supabase — uma vez, neste repositório
+## Migrações — projeto Supabase partilhado
 
-Projeto partilhado: **Contabilidades Ruben Rodrigues**. Começar num ambiente de desenvolvimento, com dados de teste.
+Aplicar **uma vez e pela ordem indicada**, através do SQL Editor ou CLI de migrações:
 
-1. No Supabase, abrir SQL Editor → New query.
-2. Colar e executar integralmente [`supabase/migrations/202610230001_core.sql`](supabase/migrations/202610230001_core.sql).
-3. Executar também, depois da inicial, `supabase/migrations/202610230002_legal_acceptances.sql`, para registar a aceitação legal exigida pelo IRS.
-4. A migração inicial cria tabelas, funções, índices, RLS e o bucket privado `irs-documents`. É uma migração inicial, não um script a repetir. Os nomes são novos e uma colisão faz a transação falhar, em vez de substituir dados existentes. Não executar novamente se já tiver sido aplicada.
-5. Não executar outra cópia no repositório IRS. Ambas as aplicações usam estas mesmas tabelas.
+1. `supabase/migrations/202610230001_core.sql`
+2. `supabase/migrations/202610230002_legal_acceptances.sql`
+3. `supabase/migrations/202610230003_production_legal_version.sql`
 
-Esta migração foi verificada localmente em PostgreSQL/PGlite com fixtures dos esquemas Auth e Storage; não foi aplicada por este desenvolvimento ao projeto remoto.
+Se as anteriores já foram aplicadas, executar apenas as pendentes. Não repetir as migrações iniciais nem executar outra cópia no IRS. A versão legal atual é `2026-10-23.2`; o histórico anterior é preservado e não se assume aceitação em nome do cliente.
 
-## 3. Criar o primeiro profissional
+A primeira migração cria tabelas, RLS, funções e o bucket privado `irs-documents`. As seguintes criam o histórico imutável de aceitação e exigem a versão atual antes de autorizar leituras fiscais do cliente. Não foram aplicadas ao projeto remoto por este desenvolvimento: não estão disponíveis neste ambiente credenciais de administração do Supabase.
 
-1. Supabase → Authentication → Users → Add user. Criar o seu utilizador profissional e confirmar o email pelos mecanismos do Supabase. Não usar passwords de clientes.
-2. No SQL Editor, substituir o email abaixo pelo **seu email profissional exato** e executar:
+## Primeiro profissional
+
+Criar o utilizador em Supabase → Authentication → Users, confirmando o email. Depois executar no SQL Editor, substituindo o email:
 
 ```sql
 insert into public.staff_users(user_id)
@@ -46,66 +41,40 @@ select id from auth.users where lower(email) = lower('SEU_EMAIL_PROFISSIONAL')
 on conflict(user_id) do update set active=true;
 ```
 
-3. Confirmar que foi inserida/atualizada uma linha. Se não houver linha, o utilizador com esse email ainda não existe.
-4. Entrar na Gestão com esse email e a password definida. Os clientes comuns não conseguem atribuir a si próprios o papel profissional. Não há registo público de profissionais.
+Confirmar que foi afetada uma linha e entrar pela rota `/entrar`. O registo público de clientes não concede privilégios profissionais.
 
-## 4. Autenticação e emails
+## URLs de autenticação
 
-No Supabase → Authentication → URL Configuration, adicionar ambos os callbacks às Redirect URLs:
+Em Supabase → Authentication → URL Configuration:
 
-- `https://URL-IRS/auth/callback`
-- `https://URL-GESTAO/auth/callback`
-- as versões locais, quando se usa desenvolvimento (`http://localhost:3000/auth/callback` e `http://localhost:3001/auth/callback`).
+- Site URL: endereço estável do IRS.
+- Redirect URLs: `https://URL-IRS/auth/callback` e `https://URL-GESTAO/auth/callback`.
+- Cada Vercel precisa do seu `NEXT_PUBLIC_SITE_URL` correto.
 
-Definir Site URL para o endereço estável do IRS. Cada aplicação usa `NEXT_PUBLIC_SITE_URL` para pedir callbacks exatos. Confirmar configurações de confirmação de email e o serviço SMTP para emails reais. A existência de uma chave publicável não garante entrega de email.
+Configurar e verificar o envio de emails pelo serviço Auth/SMTP. Partilhar Supabase não partilha automaticamente a sessão entre domínios.
 
-## 5. Percurso de validação real
+## Funcionalidades
 
-- No IRS, criar um cliente de teste e confirmar o email.
-- Na Gestão, abrir Clientes e acessos e aprovar o registo, escolhendo o ano dos rendimentos.
-- No IRS, entrar e verificar o processo criado, adicionar agregado/rendimentos e enviar um PDF de teste sem informação pessoal.
-- Confirmar que a Gestão vê o documento, mensagem e alerta 2FA; publicar uma atualização e verificar no IRS.
-- Enviar o processo para revisão: o cliente deixa de carregar novos elementos até a Gestão reabrir como «Elementos em falta».
-- Criar um segundo cliente e confirmar que não consegue ver os dados do primeiro. Revogar o acesso e confirmar bloqueio das novas leituras.
+Aprovação de registos, abertura de conta/processo IRS e titular numa transação, concessão/revogação de módulos, consulta do agregado e rendimentos, documentos privados, mensagens, progresso e alertas de 2FA. Faturas e pagamentos existentes são consultados.
 
-A gestão recebe estado «Submetido» apenas por registo do profissional; a aplicação não submete declarações à AT. A senha do Portal das Finanças **não é recolhida nem guardada** enquanto não houver cofre implementado.
+Convites: nesta versão existem pedidos registados, sem envio/aceitação automática nem permissões amplas para familiares. Cofre fiscal, pagamentos, OCR, anexos diretamente no chat, notificações, Realtime e a plataforma Empresas ainda não estão implementados. O portal não emite faturas fiscais nem submete declarações à AT. A senha das Finanças não é recolhida enquanto não existir cofre.
 
-## Desenvolvimento e testes
+## Operação e verificação
+
+O endereço inicial abre a área autenticada. Os antigos caminhos `/teste` e `/demonstracao` apenas redirecionam para `/entrar`; não há contas fictícias, cenários ou substituição de dados reais. Os ficheiros ficam privados; formatos PDF/JPEG/PNG até 10 MB, assinatura verificada no servidor e links assinados de 60 segundos. Ainda não existe análise antivírus automática.
+
+As alterações de acesso bloqueiam novas leituras e novos links assinados; links já emitidos podem manter-se válidos até expirarem. O titular tem acesso à conta aprovada; a autorização individual de familiares será desenvolvida antes de ativar esses acessos.
+
+Verificar antes de receber dados reais: migrações, conta profissional, registo/confirmação/recuperação, aceitação legal, aprovação IRS, carregamento/download, leitura entre duas contas distintas, revogação, mensagens e progresso. Os dados pessoais ainda não têm snapshots históricos completos por exercício. Configurar retenção e backups de acordo com o serviço.
+
+## Desenvolvimento e qualidade
 
 ```sh
 npm ci
-cp .env.example .env.local
-# Preencher apenas as variáveis públicas de desenvolvimento.
-npm run dev -- --port 3001
 npm run build
 npm run typecheck
+npm run test:config
 npm run test:db
 ```
 
-`test:db` usa uma instância PostgreSQL em memória e testa os cenários de isolamento entre contas, impossibilidade de autopromoção, alerta 2FA único, relações dentro do mesmo processo, autor de mensagens, autorização de documentos/Storage, bloqueio para revisão, pedidos de convite sem acesso implícito, faturação e revogação. Não testa emails/Auth/Storage HTTP do Supabase real.
-
-Documentos: PDF/JPEG/PNG até 10 MB, assinatura do formato verificada no servidor, bucket privado, links assinados de 60 segundos e download como anexo. Ainda não há análise antivírus automática. A expiração curta limita a validade de um link já emitido; revogar acesso impede novas emissões, mas não revoga retroativamente um URL assinado ainda válido.
-
-## Limites do modelo inicial
-
-Só titulares de conta ativos com acesso IRS podem ler o agregado; familiares convidados não recebem permissões amplas enquanto o escopo individual não estiver implementado. As permissões são impostas no banco, não apenas na navegação.
-
-Os dados das pessoas desta primeira versão não têm snapshots históricos completos por ano; a UI não permite alterar o nome/NIF/nascimento de pessoas existentes. A evolução para múltiplos exercícios e versões será feita por migrações adicionais, preservando o histórico.
-
-Não existe integração de faturação: o portal não cria documentos fiscais. O bucket não é público e os segredos de serviços externos não pertencem às tabelas ou ao navegador. Rever política de privacidade/retensão e configurar backups antes de introduzir dados reais de clientes.
-
-## Explorar sem configurar Supabase
-
-A rota `/demonstracao` funciona sem variáveis de ambiente ou base de dados. Sem configuração, o endereço inicial abre automaticamente essa demonstração. A entrada real continua em `/entrar`, com ligação de volta ao exemplo. Depois de configurar o Supabase, o endereço inicial passa para a área autenticada.
-
-A demonstração identifica claramente dados fictícios em memória: agregado, rendimentos, imóveis, documentos simulados, mensagens e progresso. Na Gestão também permite simular concessões de módulos e acompanhar alertas. Não tem uploads reais, emails, passwords ou persistência; recarregar repõe os exemplos. As duas aplicações não sincronizam estes dados entre si. A demonstração não abre ou contorna os dados protegidos em `/app`.
-
-### Integração automática Vercel / Supabase
-
-Uma integração automática num projeto Vercel não é necessária no segundo. O segundo projeto pode usar os mesmos valores públicos de URL e chave do primeiro, mantendo o seu próprio `NEXT_PUBLIC_SITE_URL`. O código também aceita os aliases de servidor `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` e `SUPABASE_ANON_KEY`, frequentemente disponibilizados por integrações. Nunca usa a variável genérica `SUPABASE_KEY`, porque o seu tipo seria ambíguo. Chaves `sb_secret_` e JWT com papel diferente de `anon` são recusados por esta configuração.
-
-## Aceitação legal no Portal IRS
-
-Aplicar depois da migração inicial `supabase/migrations/202610230002_legal_acceptances.sql`. A nova tabela regista o utilizador, a versão dos Termos e da Política e a data do servidor, sem IP. Os clientes não podem editar ou apagar esse histórico nem criar aceitações em nome de terceiros. O registo inclui os metadados da confirmação; utilizadores existentes confirmam por ação autenticada no IRS. Não se assume aceitação em nome de contas antigas.
-
-Sem aceitação da versão atual, a política de dados bloqueia leituras fiscais do cliente, mesmo através de chamadas diretas à API. A gestão profissional continua a ter o âmbito de administração autorizado. A ação de aceitação nunca concede módulos. A aplicação IRS e esta migração usam a versão `2026-10-23.1`; futuras alterações dos textos exigem nova versão e migração correspondentes.
+Para desenvolvimento local, preencher `.env.local` a partir de `.env.example` e executar `npm run dev -- --port 3001`. Os testes automáticos usam exclusivamente dados locais isolados e não criam utilizadores ou documentos na plataforma publicada. A validação local não substitui a verificação do projeto Supabase e do deploy Vercel reais.

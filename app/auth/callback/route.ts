@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { configuration, supabase } from '@/lib/supabase';
 export async function GET(request:NextRequest){
+  if(!configuration())return NextResponse.redirect(new URL('/entrar?erro=Serviço%20temporariamente%20indisponível.',request.url));
   const code=request.nextUrl.searchParams.get('code');
   const wanted=request.nextUrl.searchParams.get('next');
   const next=wanted==='/nova-password'?'/nova-password':'/app';

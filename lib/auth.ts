@@ -13,7 +13,7 @@ export async function session() {
   const current = await identity();
   if (IS_MANAGEMENT) {
     const { data, error } = await current.client.rpc('is_staff');
-    if (error) redirect('/entrar?erro=Base%20de%20dados%20por%20preparar.%20Execute%20a%20migração%20central.');
+    if (error) redirect('/entrar?erro=Não%20foi%20possível%20confirmar%20o%20acesso.%20Contacte%20o%20profissional.');
     if (!data) redirect('/entrar?erro=Esta%20conta%20não%20tem%20acesso%20à%20gestão.');
   }
   return current;
