@@ -26,6 +26,7 @@ Aplicar **uma vez e pela ordem indicada**, através do SQL Editor ou CLI de migr
 1. `supabase/migrations/202610230001_core.sql`
 2. `supabase/migrations/202610230002_legal_acceptances.sql`
 3. `supabase/migrations/202610230003_production_legal_version.sql`
+4. `supabase/migrations/202610230004_annual_cases.sql`
 
 Se as anteriores já foram aplicadas, executar apenas as pendentes. Não repetir as migrações iniciais nem executar outra cópia no IRS. A versão legal atual é `2026-10-23.2`; o histórico anterior é preservado e não se assume aceitação em nome do cliente.
 
@@ -55,7 +56,11 @@ Configurar e verificar o envio de emails pelo serviço Auth/SMTP. Partilhar Supa
 
 ## Funcionalidades
 
-Aprovação de registos, abertura de conta/processo IRS e titular numa transação, concessão/revogação de módulos, consulta do agregado e rendimentos, documentos privados, mensagens, progresso e alertas de 2FA. Faturas e pagamentos existentes são consultados.
+Aprovação de registos sem duplicar contas em novas tentativas, abertura de conta/processo IRS e titular numa transação, concessão/revogação de módulos, consulta do agregado e rendimentos, documentos privados, mensagens, progresso e alertas de 2FA. Faturas e pagamentos existentes são consultados.
+
+Em **Clientes e acessos**, os registos pendentes e as contas aprovadas aparecem separadamente. **Abrir um ano de IRS** cria o processo na conta existente ou abre o que já existe nesse ano. Requer conta ativa e exatamente um titular com acesso IRS ativo. Repetir uma aprovação nunca reativa acessos nem abre outro ano. Se houver duplicados anteriores, os dados são preservados e a abertura pede revisão profissional.
+
+Um novo exercício associa apenas o titular e começa sem rendimentos, imóveis, documentos ou mensagens anteriores. No agregado, **Associar uma pessoa já registada** permite confirmar um familiar para esse ano, sem duplicar a pessoa ou alterar o parentesco nos processos anteriores. Não concede acesso de login a esse familiar.
 
 Convites: nesta versão existem pedidos registados, sem envio/aceitação automática nem permissões amplas para familiares. Cofre fiscal, pagamentos, OCR, anexos diretamente no chat, notificações, Realtime e a plataforma Empresas ainda não estão implementados. O portal não emite faturas fiscais nem submete declarações à AT. A senha das Finanças não é recolhida enquanto não existir cofre.
 
@@ -74,6 +79,7 @@ npm ci
 npm run build
 npm run typecheck
 npm run test:config
+npm run test:validation
 npm run test:db
 ```
 

@@ -18,6 +18,7 @@ test('shared schema, database constraints and tenant isolation',async t=>{
   await db.exec(await readFile(new URL('../supabase/migrations/202610230001_core.sql',import.meta.url),'utf8'));
   await db.exec(await readFile(new URL('../supabase/migrations/202610230002_legal_acceptances.sql',import.meta.url),'utf8'));
   await db.exec(await readFile(new URL('../supabase/migrations/202610230003_production_legal_version.sql',import.meta.url),'utf8'));
+  await db.exec(await readFile(new URL('../supabase/migrations/202610230004_annual_cases.sql',import.meta.url),'utf8'));
   for(const [name,id]of Object.entries(ids)) await db.query('insert into auth.users(id,email,raw_user_meta_data) values($1,$2,$3)',[id,name+'@example.com',JSON.stringify({terms_accepted:true,terms_version:'2026-10-23.2',privacy_version:'2026-10-23.2',full_name:'Test '+name,birth_date:'1980-01-01',nif:name==='a'?'123456789':name==='b'?'223456789':name==='member'?'323456789':'423456789'})]);
   await db.query('insert into public.staff_users(user_id) values($1)',[ids.staff]);
   const actor=async id=>{await db.exec('reset role');await db.query("select set_config('request.jwt.claim.sub',$1,false)",[id]);await db.exec('set role authenticated');};
@@ -110,8 +111,77 @@ test('shared schema, database constraints and tenant isolation',async t=>{
   await t.test('financial records do not leak across accounts',async()=>{
    await db.exec('reset role');await db.query("insert into public.invoices(account_id,reference,issued_at,total) values($1,'FT1','2026-10-23',100)",[a]);await actor(ids.b);assert.equal((await db.query('select * from public.invoices')).rows.length,0);
   });
+  await t.test('approval retries preserve accounts, grants and existing annual data',async()=>{
+   await actor(ids.staff);
+   const before=(await db.query('select count(*) as n from public.client_accounts')).rows[0].n;
+   assert.equal((await db.query('select public.approve_client($1,$2,2026) as id',[ids.a,'Retry name'])).rows[0].id,a);
+   assert.equal((await db.query('select count(*) as n from public.client_accounts')).rows[0].n,before);
+   assert.equal((await db.query('select count(*) as n from public.people where account_id=$1 and nif=$2',[a,'123456789'])).rows[0].n,1);
+   assert.equal((await db.query('select count(*) as n from public.irs_cases where account_id=$1',[a])).rows[0].n,1);
+   assert.equal((await db.query('select name from public.client_accounts where id=$1',[a])).rows[0].name,'Account A');
+   await assert.rejects(db.query('select public.approve_client($1,$2,2101)',[ids.a,'Bad year']));
+   await actor(ids.a);await assert.rejects(db.query('select public.approve_client($1,$2,2025)',[ids.a,'Self approve']));
+  });
+  let nextCase;
+  await t.test('staff opens a new annual case once without copying fiscal records',async()=>{
+   await actor(ids.a);await assert.rejects(db.query('select public.create_irs_case($1,2026)',[a]));
+   await actor(ids.staff);
+   await assert.rejects(db.query('select public.create_irs_case($1,null)',[a]));
+   await assert.rejects(db.query('select public.create_irs_case($1,1999)',[a]));
+   await assert.rejects(db.query('select public.create_irs_case($1,2026)',[ids.a]));
+   nextCase=(await db.query('select public.create_irs_case($1,2026) as id',[a])).rows[0].id;
+   assert.equal((await db.query('select public.create_irs_case($1,2026) as id',[a])).rows[0].id,nextCase);
+   assert.equal((await db.query('select public.create_irs_case($1,2025) as id',[a])).rows[0].id,ca);
+   assert.equal((await db.query('select count(*) as n from public.irs_cases where account_id=$1',[a])).rows[0].n,2);
+   assert.equal((await db.query('select status from public.irs_cases where id=$1',[nextCase])).rows[0].status,'collecting');
+   assert.equal((await db.query('select person_id from public.case_people where case_id=$1',[nextCase])).rows[0].person_id,pa);
+   for(const table of ['income_records','property_assets','documents','messages','progress_events'])assert.equal((await db.query(`select count(*) as n from public.${table} where case_id=$1`,[nextCase])).rows[0].n,0);
+   assert.equal((await db.query('select count(*) as n from public.income_records where case_id=$1',[ca])).rows[0].n,1);
+   await actor(ids.a);assert.equal((await db.query('select count(*) as n from public.irs_cases')).rows[0].n,2);
+  });
+  await t.test('existing household people can be linked for another year without changing old relationships',async()=>{
+   await actor(ids.a);
+   await assert.rejects(db.query('select public.link_case_person($1,$2,$3,$4)',[a,nextCase,pb,'conjuge']));
+   await assert.rejects(db.query('select public.link_case_person($1,$2,$3,$4)',[b,cb,person,'conjuge']));
+   await assert.rejects(db.query('select public.link_case_person($1,$2,$3,$4)',[a,nextCase,person,'titular']));
+   await db.query('select public.link_case_person($1,$2,$3,$4)',[a,nextCase,person,'outro']);
+   await db.query('select public.link_case_person($1,$2,$3,$4)',[a,nextCase,person,'outro']);
+   await assert.rejects(db.query('select public.link_case_person($1,$2,$3,$4)',[a,nextCase,person,'conjuge']));
+   assert.equal((await db.query('select count(*) as n from public.case_people where case_id=$1',[nextCase])).rows[0].n,2);
+   assert.equal((await db.query('select relationship from public.case_people where case_id=$1 and person_id=$2',[ca,person])).rows[0].relationship,'conjuge');
+   await db.query('select public.submit_case($1,$2)',[a,nextCase]);
+   await assert.rejects(db.query('select public.link_case_person($1,$2,$3,$4)',[a,nextCase,person,'outro']));
+  });
+  await t.test('suspension and revoked IRS grants cannot be undone by an approval retry',async()=>{
+   await actor(ids.staff);await db.query("update public.client_accounts set status='suspended' where id=$1",[a]);
+   assert.equal((await db.query('select public.approve_client($1,$2,2027) as id',[ids.a,'Retry'])).rows[0].id,a);
+   await assert.rejects(db.query('select public.create_irs_case($1,2027)',[a]));
+   assert.equal((await db.query('select status from public.client_accounts where id=$1',[a])).rows[0].status,'suspended');
+   await db.query("update public.client_accounts set status='active' where id=$1",[a]);
+   await db.query('update public.account_access set irs=false where account_id=$1 and user_id=$2',[a,ids.a]);
+   await db.query('select public.approve_client($1,$2,2027)',[ids.a,'Retry']);
+   await assert.rejects(db.query('select public.create_irs_case($1,2027)',[a]));
+   assert.equal((await db.query('select irs from public.account_access where account_id=$1 and user_id=$2',[a,ids.a])).rows[0].irs,false);
+   await db.query('update public.account_access set irs=true where account_id=$1 and user_id=$2',[a,ids.a]);
+  });
+  await t.test('pre-existing ambiguous annual cases are preserved and require explicit review',async()=>{
+   await db.exec('reset role');
+   const duplicate=(await db.query('insert into public.irs_cases(account_id,tax_year) values($1,2025) returning id',[b])).rows[0].id;
+   await actor(ids.staff);await assert.rejects(db.query('select public.create_irs_case($1,2025)',[b]));
+   assert.equal((await db.query('select count(*) as n from public.irs_cases where account_id=$1 and tax_year=2025',[b])).rows[0].n,2);
+   await db.exec('reset role');await db.query('delete from public.irs_cases where id=$1',[duplicate]);
+  });
+  await t.test('multiple existing owner accounts are never merged or approved arbitrarily',async()=>{
+   await db.exec('reset role');
+   await db.query("insert into public.account_access(account_id,user_id,role,irs) values($1,$2,'owner',true)",[a,ids.b]);
+   await actor(ids.staff);await assert.rejects(db.query('select public.approve_client($1,$2,2027)',[ids.b,'Ambiguous']));
+   await assert.rejects(db.query('select public.create_irs_case($1,2027)',[a]));
+   assert.equal((await db.query(`select count(*) as n from public.account_access where user_id=$1 and role='owner'`,[ids.b])).rows[0].n,2);
+   await db.exec('reset role');await db.query('delete from public.account_access where account_id=$1 and user_id=$2',[a,ids.b]);
+  });
   await t.test('revocation blocks reads and subsequent private object access',async()=>{
    await actor(ids.staff);await db.query('update public.account_access set active=false where account_id=$1 and user_id=$2',[a,ids.a]);await actor(ids.a);assert.equal((await db.query('select * from public.client_accounts')).rows.length,0);assert.equal((await db.query('select * from public.documents')).rows.length,0);assert.equal((await db.query('select * from storage.objects')).rows.length,0);
+   await actor(ids.staff);await db.query('select public.approve_client($1,$2,2028)',[ids.a,'Retry after revocation']);await assert.rejects(db.query('select public.create_irs_case($1,2028)',[a]));assert.equal((await db.query('select active from public.account_access where account_id=$1 and user_id=$2',[a,ids.a])).rows[0].active,false);
   });
  }finally{await db.close();}
 });

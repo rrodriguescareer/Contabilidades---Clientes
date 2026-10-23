@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { session } from './auth';
 import { IS_MANAGEMENT } from './app';
+import { personError } from './validation';
 import { uuid, categories, states, relations, documentKinds } from './data';
 const text=(form:FormData,key:string,max=5000)=>String(form.get(key)||'').trim().slice(0,max);
 function context(form:FormData){const account=text(form,'account'),process=text(form,'process'),view=text(form,'view');const path=`/app?conta=${encodeURIComponent(account)}&processo=${encodeURIComponent(process)}&view=${encodeURIComponent(view)}`;return{account,process,path};}
@@ -12,14 +13,29 @@ export async function approveClient(form:FormData){
  const {client}=await session();if(!IS_MANAGEMENT)failure('Sem permissão.');const id=text(form,'user_id'),name=text(form,'name',200),year=Number(text(form,'year'));
  if(!uuid(id)||!name||!Number.isInteger(year)||year<2000||year>2100)failure('Verifique o cliente e o ano.');
  const {data,error}=await client.rpc('approve_client',{client:id,account_name:name,year});if(error)failure('Não foi possível aprovar. O utilizador deve ter nome, nascimento e NIF completos.');
- revalidatePath('/app');redirect(`/app?conta=${data}&view=resumo&mensagem=Cliente%20aprovado.%20Acesso%20IRS%20atribuído.`);
+ revalidatePath('/app');redirect(`/app?conta=${data}&view=resumo&mensagem=Conta-cliente%20disponível.%20Confirme%20os%20acessos%20na%20gestão.`);
+}
+export async function createAnnualCase(form:FormData){
+ const {client}=await session();if(!IS_MANAGEMENT)failure('Sem permissão.');
+ const account=text(form,'account'),year=Number(text(form,'year'));
+ if(!uuid(account)||!Number.isInteger(year)||year<2000||year>2100)failure('Selecione a conta e um ano válido.','/app?view=clientes');
+ const {data,error}=await client.rpc('create_irs_case',{account,year});
+ if(error||!data)failure('Não foi possível abrir o ano. Confirme que a conta e o acesso IRS do titular estão ativos e que não existem processos duplicados.','/app?view=clientes');
+ done(`/app?conta=${account}&processo=${data}&view=agregado`,'Processo anual disponível. Confirme o agregado deste ano.');
+}
+export async function linkPerson(form:FormData){
+ const {client}=await session();const c=context(form),person=text(form,'person'),relation=text(form,'relationship');
+ if(!uuid(c.account)||!uuid(c.process)||!uuid(person)||!Object.hasOwn(relations,relation)||relation==='titular')failure('Selecione a pessoa e o parentesco.',c.path);
+ const {error}=await client.rpc('link_case_person',{account:c.account,process:c.process,person,relation});
+ if(error)failure('Não foi possível associar a pessoa. Confirme a conta, o parentesco e o estado do processo.',c.path);
+ done(c.path,'Pessoa associada a este ano. Os rendimentos e documentos anteriores não são copiados.');
 }
 export async function updateAccess(form:FormData){const {client}=await session();if(!IS_MANAGEMENT)failure('Sem permissão.');const account=text(form,'account'),user=text(form,'user');if(!uuid(account)||!uuid(user))failure('Acesso inválido.');const {error}=await client.from('account_access').update({active:form.has('active'),irs:form.has('irs'),business:form.has('business')}).eq('account_id',account).eq('user_id',user);if(error)failure('Não foi possível alterar os acessos.');revalidatePath('/app');redirect('/app?view=clientes&mensagem=Acessos%20atualizados.');}
 export async function addPerson(form:FormData){
  const {client}=await session();const c=context(form);if(!uuid(c.account)||!uuid(c.process))failure('Selecione um processo.');
- const name=text(form,'name',200),dob=text(form,'birth_date'),nif=text(form,'nif'),relation=text(form,'relationship'),email=text(form,'email',254);
- if(!name||!/^\d{4}-\d{2}-\d{2}$/.test(dob)||!/^\d{9}$/.test(nif)||!Object.keys(relations).includes(relation)||relation==='titular')failure('Verifique os dados da pessoa.',c.path);
- if(email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))failure('Email inválido.',c.path);
+ const name=text(form,'name',201),dob=text(form,'birth_date'),nif=text(form,'nif'),relation=text(form,'relationship'),email=text(form,'email',255);
+ const invalid=personError(name,dob,nif,email);if(invalid)failure(invalid,c.path);
+ if(!Object.hasOwn(relations,relation)||relation==='titular')failure('Escolha um parentesco válido.',c.path);
  const {error}=await client.rpc('add_case_person',{account:c.account,process:c.process,person_name:name,birth:dob,tax_id:nif,relation,person_email:email,two_factor:form.has('two_factor')});
  if(error)failure('Não foi possível adicionar. Verifique duplicados e se o processo está aberto para recolha.',c.path);done(c.path);
 }
