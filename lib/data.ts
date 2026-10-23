@@ -1,0 +1,17 @@
+export type Account={id:string;name:string;status:string};
+export type Process={id:string;account_id:string;tax_year:number;label:string;status:string;created_at:string};
+export type Person={id:string;account_id:string;full_name:string;birth_date:string;nif:string;email:string|null;tax_two_factor:boolean};
+export type CasePerson={person_id:string;relationship:string};
+export type Property={id:string;label:string;description:string|null};
+export type Income={id:string;title:string;category:string;person_id:string|null;property_id:string|null;mode:string;details:string};
+export type Document={id:string;kind:string;file_name:string;state:string;income_id:string|null;created_at:string};
+export type Message={id:string;body:string;author_id:string;created_at:string};
+export type Progress={id:string;title:string;body:string;created_at:string};
+export type Invoice={id:string;reference:string;issued_at:string;due_at:string|null;total:number|string;currency:string};
+export type Payment={invoice_id:string;amount:number|string;paid_at:string};
+export type Profile={id:string;full_name:string;email:string;nif:string|null;birth_date:string|null;phone:string|null};
+export const categories:Record<string,string>={employment:'Trabalho dependente',pension:'Pensões',independent:'Independente / recibos verdes',property_sale:'Mais / menos-valias de imóveis',securities:'Ações e outros títulos',property_rent:'Rendas de imóveis',deduction:'Despesas e benefícios'};
+export const states:Record<string,string>={collecting:'Em recolha',review:'Enviado para revisão',missing:'Elementos em falta',validation:'Pronto para validação',authorization:'Aguarda autorização',submitted:'Submetido',completed:'Concluído'};
+export const relations:Record<string,string>={titular:'Titular',conjuge:'Cônjuge',descendente:'Descendente',ascendente:'Ascendente',outro:'Outro'};
+export const documentKinds:Record<string,string[]>={employment:['Recibos de vencimento','Declaração anual da empresa','Outros'],pension:['Declaração anual da Segurança Social','Declaração anual da seguradora','Outros'],independent:['Recibos / faturas','Resumo anual','Contribuições e retenções','Outros'],property_sale:['Escritura de compra','Escritura de venda','Despesas de aquisição','Despesas de venda','Impostos na aquisição','Impostos na venda','Obras e despesas associadas','Outros'],securities:['Relatório da corretora','Comprovativos de compra e venda','Comissões','Outros'],property_rent:['Contrato','Recibos / mapa de rendas','IMI e condomínio','Despesas do imóvel','Outros'],deduction:['Saúde','Educação','Habitação','PPR','Donativos','Outros']};
+export const uuid=(value:string)=>/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5a-f0-9][a-f0-9]{3}-[89ab0-9][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);

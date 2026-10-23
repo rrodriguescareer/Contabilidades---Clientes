@@ -1,0 +1,9 @@
+import { redirect } from 'next/navigation';
+import { AuthShell } from '@/lib/auth-view';
+import { signUp } from '@/lib/auth-actions';
+import { IS_MANAGEMENT } from '@/lib/app';
+export const dynamic='force-dynamic';
+export default async function Register({searchParams}:{searchParams:Promise<{erro?:string}>}){
+ if(IS_MANAGEMENT)redirect('/entrar');const {erro}=await searchParams;
+ return <AuthShell title="Uma conta para o acompanhar." description="O profissional confirmará os módulos e processos a que tem acesso." error={erro}><form action={signUp}><label>Nome completo<input name="full_name" autoComplete="name" required maxLength={200}/></label><div className="field-grid"><label>Email<input name="email" type="email" autoComplete="email" required maxLength={254}/></label><label>Telemóvel<input name="phone" type="tel" autoComplete="tel" required maxLength={30}/></label><label>Data de nascimento<input name="birth_date" type="date" required/></label><label>NIF<input name="nif" inputMode="numeric" pattern="[0-9]{9}" required maxLength={9}/></label></div><label>Morada, código postal e localidade<input name="address" autoComplete="street-address" required maxLength={400}/></label><label>Palavra-passe da plataforma<input name="password" type="password" autoComplete="new-password" minLength={12} maxLength={128} required/><small>Use pelo menos 12 caracteres. Esta não é a senha do Portal das Finanças.</small></label><label className="check"><input type="checkbox" name="consent" required/>Solicito a criação da conta e o tratamento destes dados para gerir o meu pedido de acesso.</label><p className="fine">O registo não atribui automaticamente acesso a clientes, empresas ou dados fiscais. Não introduza senhas das Finanças.</p><button className="primary" type="submit">Criar conta</button></form></AuthShell>;
+}
