@@ -29,8 +29,9 @@ Projeto partilhado: **Contabilidades Ruben Rodrigues**. Começar num ambiente de
 
 1. No Supabase, abrir SQL Editor → New query.
 2. Colar e executar integralmente [`supabase/migrations/202610230001_core.sql`](supabase/migrations/202610230001_core.sql).
-3. A migração cria tabelas, funções, índices, RLS e o bucket privado `irs-documents`. É uma migração inicial, não um script a repetir. Os nomes são novos e uma colisão faz a transação falhar, em vez de substituir dados existentes. Não executar novamente se já tiver sido aplicada.
-4. Não executar outra cópia no repositório IRS. Ambas as aplicações usam estas mesmas tabelas.
+3. Executar também, depois da inicial, `supabase/migrations/202610230002_legal_acceptances.sql`, para registar a aceitação legal exigida pelo IRS.
+4. A migração inicial cria tabelas, funções, índices, RLS e o bucket privado `irs-documents`. É uma migração inicial, não um script a repetir. Os nomes são novos e uma colisão faz a transação falhar, em vez de substituir dados existentes. Não executar novamente se já tiver sido aplicada.
+5. Não executar outra cópia no repositório IRS. Ambas as aplicações usam estas mesmas tabelas.
 
 Esta migração foi verificada localmente em PostgreSQL/PGlite com fixtures dos esquemas Auth e Storage; não foi aplicada por este desenvolvimento ao projeto remoto.
 
@@ -81,7 +82,7 @@ npm run typecheck
 npm run test:db
 ```
 
-`test:db` usa uma instância PostgreSQL em memória e testa 10 cenários: isolamento entre contas, impossibilidade de autopromoção, alerta 2FA único, relações dentro do mesmo processo, autor de mensagens, autorização de documentos/Storage, bloqueio para revisão, pedidos de convite sem acesso implícito, faturação e revogação. Não testa emails/Auth/Storage HTTP do Supabase real.
+`test:db` usa uma instância PostgreSQL em memória e testa os cenários de isolamento entre contas, impossibilidade de autopromoção, alerta 2FA único, relações dentro do mesmo processo, autor de mensagens, autorização de documentos/Storage, bloqueio para revisão, pedidos de convite sem acesso implícito, faturação e revogação. Não testa emails/Auth/Storage HTTP do Supabase real.
 
 Documentos: PDF/JPEG/PNG até 10 MB, assinatura do formato verificada no servidor, bucket privado, links assinados de 60 segundos e download como anexo. Ainda não há análise antivírus automática. A expiração curta limita a validade de um link já emitido; revogar acesso impede novas emissões, mas não revoga retroativamente um URL assinado ainda válido.
 
@@ -102,3 +103,9 @@ A demonstração identifica claramente dados fictícios em memória: agregado, r
 ### Integração automática Vercel / Supabase
 
 Uma integração automática num projeto Vercel não é necessária no segundo. O segundo projeto pode usar os mesmos valores públicos de URL e chave do primeiro, mantendo o seu próprio `NEXT_PUBLIC_SITE_URL`. O código também aceita os aliases de servidor `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` e `SUPABASE_ANON_KEY`, frequentemente disponibilizados por integrações. Nunca usa a variável genérica `SUPABASE_KEY`, porque o seu tipo seria ambíguo. Chaves `sb_secret_` e JWT com papel diferente de `anon` são recusados por esta configuração.
+
+## Aceitação legal no Portal IRS
+
+Aplicar depois da migração inicial `supabase/migrations/202610230002_legal_acceptances.sql`. A nova tabela regista o utilizador, a versão dos Termos e da Política e a data do servidor, sem IP. Os clientes não podem editar ou apagar esse histórico nem criar aceitações em nome de terceiros. O registo inclui os metadados da confirmação; utilizadores existentes confirmam por ação autenticada no IRS. Não se assume aceitação em nome de contas antigas.
+
+Sem aceitação da versão atual, a política de dados bloqueia leituras fiscais do cliente, mesmo através de chamadas diretas à API. A gestão profissional continua a ter o âmbito de administração autorizado. A ação de aceitação nunca concede módulos. A aplicação IRS e esta migração usam a versão `2026-10-23.1`; futuras alterações dos textos exigem nova versão e migração correspondentes.

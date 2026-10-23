@@ -16,7 +16,8 @@ test('shared schema, database constraints and tenant isolation',async t=>{
   create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text references storage.buckets(id),name text not null);
   alter table storage.objects enable row level security;grant select,insert on storage.objects to authenticated;`);
   await db.exec(await readFile(new URL('../supabase/migrations/202610230001_core.sql',import.meta.url),'utf8'));
-  for(const [name,id]of Object.entries(ids)) await db.query('insert into auth.users(id,email,raw_user_meta_data) values($1,$2,$3)',[id,name+'@example.com',JSON.stringify({full_name:'Test '+name,birth_date:'1980-01-01',nif:name==='a'?'123456789':name==='b'?'223456789':name==='member'?'323456789':'423456789'})]);
+  await db.exec(await readFile(new URL('../supabase/migrations/202610230002_legal_acceptances.sql',import.meta.url),'utf8'));
+  for(const [name,id]of Object.entries(ids)) await db.query('insert into auth.users(id,email,raw_user_meta_data) values($1,$2,$3)',[id,name+'@example.com',JSON.stringify({terms_accepted:true,terms_version:'2026-10-23.1',privacy_version:'2026-10-23.1',full_name:'Test '+name,birth_date:'1980-01-01',nif:name==='a'?'123456789':name==='b'?'223456789':name==='member'?'323456789':'423456789'})]);
   await db.query('insert into public.staff_users(user_id) values($1)',[ids.staff]);
   const actor=async id=>{await db.exec('reset role');await db.query("select set_config('request.jwt.claim.sub',$1,false)",[id]);await db.exec('set role authenticated');};
   await actor(ids.staff);
@@ -26,6 +27,22 @@ test('shared schema, database constraints and tenant isolation',async t=>{
   const cb=(await db.query('select id from public.irs_cases where account_id=$1',[b])).rows[0].id;
   const pa=(await db.query('select id from public.people where account_id=$1',[a])).rows[0].id;
   const pb=(await db.query('select id from public.people where account_id=$1',[b])).rows[0].id;
+  await t.test('acceptance stores server time, current versions and the authenticated user only',async()=>{
+   await actor(ids.a);
+   let rows=(await db.query('select * from public.legal_acceptances')).rows;
+   assert.equal(rows.length,1);assert.equal(rows[0].user_id,ids.a);assert.equal(rows[0].source,'registration');assert.equal(rows[0].terms_version,'2026-10-23.1');assert.ok(rows[0].accepted_at);
+   await db.query('select public.record_legal_acceptance()');assert.equal((await db.query('select * from public.legal_acceptances')).rows.length,1);
+   await assert.rejects(db.query("update public.legal_acceptances set accepted_at='2000-01-01' where user_id=$1",[ids.a]));
+   await assert.rejects(db.query('insert into public.legal_acceptances(user_id,terms_version,privacy_version,source) values($1,$2,$3,$4)',[ids.b,'forged','forged','registration']));
+  });
+  await t.test('no acceptance blocks fiscal reads until that user explicitly confirms',async()=>{
+   const id='10000000-0000-4000-8000-000000000005';await db.exec('reset role');
+   await db.query('insert into auth.users(id,email,raw_user_meta_data) values($1,$2,$3)',[id,'no-consent@example.com',JSON.stringify({full_name:'Pending acceptance',birth_date:'1980-01-01',nif:'623456789'})]);
+   await actor(ids.staff);const pending=(await db.query('select public.approve_client($1,$2,2025) as id',[id,'Pending account'])).rows[0].id;
+   await actor(id);assert.equal((await db.query('select * from public.legal_acceptances')).rows.length,0);assert.equal((await db.query('select * from public.client_accounts where id=$1',[pending])).rows.length,0);
+   await db.query('select public.record_legal_acceptance()');assert.equal((await db.query('select * from public.client_accounts where id=$1',[pending])).rows.length,1);
+   assert.equal((await db.query('select source from public.legal_acceptances')).rows[0].source,'authenticated_confirmation');
+  });
   await t.test('client reads own tenant and cannot self-promote or grant modules',async()=>{
    await actor(ids.a);assert.equal((await db.query('select * from public.client_accounts')).rows.length,1);
    assert.equal((await db.query('select * from public.people where account_id=$1',[b])).rows.length,0);
