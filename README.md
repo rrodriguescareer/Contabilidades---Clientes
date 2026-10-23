@@ -21,7 +21,11 @@ Nunca utilizar `service_role`, secret key ou a password da base de dados no fron
 
 ## Migrações — projeto Supabase partilhado
 
-Aplicar **uma vez e pela ordem indicada**, através do SQL Editor ou CLI de migrações:
+**Primeira instalação (ainda não existem tabelas da aplicação):** abra [supabase/install.sql](supabase/install.sql), copie o ficheiro completo para Supabase → SQL Editor → New query e execute em **Run**. Este ficheiro inclui as quatro migrações na ordem correta, numa única transação. Não execute a migração 004 isoladamente numa base sem a estrutura inicial. Se surgir `type "public.profiles" does not exist`, falta a instalação inicial nesse projeto Supabase.
+
+O instalador interrompe se encontrar tabelas da aplicação já existentes e preserva os dados; nesse caso, identifique as migrações já aplicadas e execute apenas as pendentes. Não apague tabelas para contornar a verificação. Depois de executar o instalador com sucesso, não volte a executar as migrações 001–004.
+
+**Atualização de uma instalação existente:** aplicar apenas as migrações pendentes, pela ordem indicada, através do SQL Editor ou CLI de migrações:
 
 1. `supabase/migrations/202610230001_core.sql`
 2. `supabase/migrations/202610230002_legal_acceptances.sql`
@@ -81,6 +85,9 @@ npm run typecheck
 npm run test:config
 npm run test:validation
 npm run test:db
+npm run test:install
 ```
 
 Para desenvolvimento local, preencher `.env.local` a partir de `.env.example` e executar `npm run dev -- --port 3001`. Os testes automáticos usam exclusivamente dados locais isolados e não criam utilizadores ou documentos na plataforma publicada. A validação local não substitui a verificação do projeto Supabase e do deploy Vercel reais.
+
+O ficheiro de instalação é gerado a partir das migrações com `npm run db:bundle`; atualize-o ao adicionar migrações. `npm run test:install` verifica a instalação completa e a preservação de dados quando se tenta repetir a instalação ou existe uma estrutura parcial.
