@@ -62,8 +62,43 @@ select 'Atualizacao concluida: registo automatico, gestao, descontos, pagamentos
 `;
 }
 
+export async function buildCurrentUpgradeSql(){
+ const migrations=[
+  ['202610230005_accounts_and_management.sql',"not exists(select 1 from information_schema.columns where table_schema='public' and table_name='profiles' and column_name='onboarding_completed_at')"],
+  ['202610230006_checkout.sql',"to_regclass('public.irs_checkouts') is null"],
+  ['202610230007_document_deduplication.sql',"not exists(select 1 from information_schema.columns where table_schema='public' and table_name='documents' and column_name='content_hash')"],
+  ['202610240008_session_context.sql',"to_regprocedure('public.get_portal_context()') is null"],
+ ];
+ const parts=[];
+ for(const [name,condition]of migrations){
+  const sql=(await readFile(new URL(name,directory),'utf8')).replace(/^begin;\s*$/gmi,'').replace(/^commit;\s*$/gmi,'').trim();
+  const delimiter='$migration_'+name.slice(0,12)+'$';
+  parts.push(`if ${condition} then\n execute ${delimiter}\n${sql}\n${delimiter};\nend if;`);
+ }
+ return `-- ATUALIZACAO ATUAL: aplica apenas as migracoes 005–008 ainda em falta.
+-- Pode repetir: preserva contas, estados de bloqueio e dados existentes.
+begin;
+do $update_current$
+begin
+ if to_regclass('public.profiles') is null or to_regprocedure('public.create_irs_case(uuid,integer)') is null then
+  raise exception 'Falta a instalacao inicial 001–004. Numa base vazia use supabase/install.sql.';
+ end if;
+${parts.join('\n\n')}
+end $update_current$;
+commit;
+select 'Atualizacao concluida.' as resultado,
+case
+ when not exists(select 1 from auth.users where lower(email)='contabilidade.rubenrodrigues@gmail.com') then 'Falta criar a conta em Authentication > Users com o email do contabilista. A atualizacao nao cria palavras-passe.'
+ when not exists(select 1 from auth.users where lower(email)='contabilidade.rubenrodrigues@gmail.com' and email_confirmed_at is not null) then 'A conta existe, mas falta confirmar o email.'
+ when exists(select 1 from public.profiles p join auth.users u on u.id=p.id where lower(u.email)='contabilidade.rubenrodrigues@gmail.com' and (p.disabled_at is not null or p.deleted_at is not null)) then 'O perfil do contabilista esta bloqueado ou eliminado. Reveja o estado no Supabase.'
+ when exists(select 1 from public.staff_users s join auth.users u on u.id=s.user_id where lower(u.email)='contabilidade.rubenrodrigues@gmail.com' and not s.active) then 'O acesso de gestao foi desativado no banco. Nao foi reativado automaticamente.'
+ else 'Conta confirmada. O acesso de contabilista sera verificado e recuperado ao entrar.' end as conta_gestao;
+`;
+}
+
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  await writeFile(new URL('../supabase/install.sql',import.meta.url),await buildInstallSql());
  await writeFile(new URL('../supabase/upgrade-005-007.sql',import.meta.url),await buildUpgradeSql());
- console.log('supabase/install.sql e supabase/upgrade-005-007.sql atualizados.');
+ await writeFile(new URL('../supabase/update-current.sql',import.meta.url),await buildCurrentUpgradeSql());
+ console.log('Instalacao e ficheiros de atualizacao SQL atualizados.');
 }

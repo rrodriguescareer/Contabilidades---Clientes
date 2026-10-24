@@ -14,7 +14,9 @@
     "test:install": "node --test tests/install.test.mjs",
     "test:platform": "node --test tests/platform.test.mjs",
     "test:revolut": "node --test tests/revolut.test.mjs",
-    "test:upgrade": "node --test tests/upgrade.test.mjs"
+    "test:upgrade": "node --test tests/upgrade.test.mjs",
+    "test:dashboard": "node --test tests/dashboard.test.mjs",
+    "test:auth": "node --test tests/auth-access.test.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.7",

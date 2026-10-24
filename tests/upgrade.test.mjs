@@ -2,9 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {PGlite} from '@electric-sql/pglite';
-import {buildUpgradeSql} from '../scripts/build-install.mjs';
+import {buildUpgradeSql,buildCurrentUpgradeSql} from '../scripts/build-install.mjs';
 const upgrade=await readFile(new URL('../supabase/upgrade-005-007.sql',import.meta.url),'utf8');
+const current=await readFile(new URL('../supabase/update-current.sql',import.meta.url),'utf8');
 test('published upgrade matches the new migration sources',async()=>assert.equal(upgrade,await buildUpgradeSql()));
+test('current upgrade matches all pending migration sources',async()=>assert.equal(current,await buildCurrentUpgradeSql()));
 test('upgrading the installed v1 preserves clients, originals, invoices and legal history',async()=>{
  const db=new PGlite();
  try{
@@ -33,5 +35,41 @@ test('upgrading the installed v1 preserves clients, originals, invoices and lega
   assert.equal((await db.query('select public.is_staff() as staff')).rows[0].staff,true);
   await assert.rejects(db.exec(upgrade),/ja foi aplicada/);await db.exec('rollback');
   assert.equal((await db.query('select count(*)::int as n from public.documents')).rows[0].n,1);
+  await db.exec(current);await db.exec(current);
+  assert.equal((await db.query('select count(*)::int as n from public.documents')).rows[0].n,1);
+  await db.query('delete from public.staff_users where user_id=$1',[staff]);
+  await db.exec('set role authenticated');
+  let context=(await db.query('select public.get_portal_context() as context')).rows[0].context;
+  assert.equal(context.id,staff);assert.equal(context.is_staff,true);
+  await db.exec('reset role');await db.query('update public.staff_users set active=false where user_id=$1',[staff]);await db.exec('set role authenticated');
+  context=(await db.query('select public.get_portal_context() as context')).rows[0].context;
+  assert.equal(context.is_staff,false,'explicitly disabled staff grants must stay disabled');
+  await db.exec('reset role');await db.query('update public.staff_users set active=true where user_id=$1',[staff]);
+  await db.query('update public.profiles set disabled_at=now() where id=$1',[staff]);await db.exec('set role authenticated');
+  assert.equal((await db.query('select public.is_staff() as value')).rows[0].value,false);
+  assert.equal((await db.query('select * from public.client_accounts')).rows.length,0);
+  await db.exec('reset role');await db.query('update public.profiles set disabled_at=null where id=$1',[staff]);
+  await db.query("select set_config('request.jwt.claim.sub',$1,false)",[client]);await db.exec('set role authenticated');
+  context=(await db.query('select public.get_portal_context() as context')).rows[0].context;
+  assert.equal(context.id,client);assert.equal(context.profile.id,client);assert.equal(context.is_staff,false);assert.equal(context.legal_accepted,false);
+  await assert.rejects(db.query('select public.get_portal_context($1)',[staff]));
+  await db.exec('reset role');await db.exec('set role anon');await assert.rejects(db.query('select public.get_portal_context()'));
+ }finally{await db.close();}
+});
+test('current upgrade can install all pending changes starting at 004 and can be repeated',async()=>{
+ const db=new PGlite();
+ try{
+  await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create schema storage;
+  create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz default now(),raw_user_meta_data jsonb not null default '{}');
+  create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
+  grant usage on schema auth,storage to authenticated;grant execute on function auth.uid() to authenticated;
+  create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
+  create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text references storage.buckets(id),name text not null);
+  alter table storage.objects enable row level security;grant select,insert on storage.objects to authenticated;`);
+  for(const name of ['202610230001_core.sql','202610230002_legal_acceptances.sql','202610230003_production_legal_version.sql','202610230004_annual_cases.sql'])await db.exec(await readFile(new URL('../supabase/migrations/'+name,import.meta.url),'utf8'));
+  const first=await db.exec(current);assert.match(first.at(-1).rows[0].conta_gestao,/Falta criar a conta/);
+  await db.exec(current);
+  assert.ok((await db.query("select to_regprocedure('public.get_portal_context()') as function")).rows[0].function);
+  assert.equal((await db.query('select count(*)::int as n from public.profiles')).rows[0].n,0);
  }finally{await db.close();}
 });

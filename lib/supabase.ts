@@ -1,10 +1,11 @@
 import 'server-only';
+import {cache} from 'react';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 
 import { configuration } from './public-config';
 export { configuration } from './public-config';
-export async function supabase() {
+export const supabase=cache(async function supabase() {
   const config = configuration();
   if (!config) throw new Error('Configuração Supabase em falta.');
   const store = await cookies();
@@ -13,7 +14,7 @@ export async function supabase() {
       try { entries.forEach(({ name, value, options }) => store.set(name, value, options)); } catch { /* Refreshed by proxy for Server Components. */ }
     } },
   });
-}
+});
 export function siteUrl() {
   const value = process.env.NEXT_PUBLIC_SITE_URL || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : '');
   try {

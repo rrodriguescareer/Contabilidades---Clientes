@@ -4,7 +4,7 @@ Aplicação privada Next.js/TypeScript para o contabilista, com módulos IRS, ut
 
 ## Atualizar a instalação existente
 
-Se já aplicou 001–004, executar **`supabase/upgrade-005-007.sql` completo** no SQL Editor do mesmo projeto Supabase. Preserva os dados existentes e inclui as três novas migrações numa transação. Não repetir a instalação inicial. Se algumas das novas migrações já foram aplicadas individualmente, executar apenas as pendentes.
+Executar **`supabase/update-current.sql` completo** no SQL Editor do mesmo projeto Supabase. Aplica apenas as migrações 005–008 em falta e pode ser repetido sem apagar ou reiniciar dados. No fim apresenta o diagnóstico da conta do contabilista. Não repetir a instalação inicial.
 
 Para uma base vazia, usar `supabase/install.sql`. Estes ficheiros são gerados a partir das migrações com `npm run db:bundle` e ficam fora da pasta de migrações para não serem aplicados duas vezes pela CLI.
 
@@ -41,6 +41,8 @@ O envio com remetente RR requer Custom SMTP no Supabase. A cobrança Revolut per
 npm ci
 npm run typecheck
 npm run build
+npm run test:auth
+npm run test:dashboard
 npm run test:config
 npm run test:validation
 npm run test:revolut

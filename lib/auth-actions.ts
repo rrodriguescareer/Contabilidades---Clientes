@@ -1,23 +1,24 @@
 'use server';
 import { redirect } from 'next/navigation';
+import {portalContext} from './portal-context';
+import {signInError} from './auth-errors';
 import { supabase, siteUrl } from './supabase';
 import { IS_MANAGEMENT } from './app';
 const text = (form: FormData, name: string) => String(form.get(name) || '').trim();
 function error(message: string, path='/entrar'): never { redirect(`${path}?erro=${encodeURIComponent(message)}`); }
-export async function signIn(form: FormData) {
-  const email=text(form,'email'), password=String(form.get('password')||'');
-  if (!email || !password) error('Preencha o email e a palavra-passe.');
-  const client=await supabase();
-  const { error: failure }=await client.auth.signInWithPassword({email,password});
-  if (failure) error('Não foi possível entrar. Verifique os dados e confirme o seu email.');
-  if (IS_MANAGEMENT) {
-    const {data,error: denied}=await client.rpc('is_staff');
-    if (denied || !data) {await client.auth.signOut();error('Não foi possível autorizar o acesso à gestão. Contacte o responsável.');}
-  }
-  const {data:{user:signedUser}}=await client.auth.getUser();
-  const {data:profile}=await client.from('profiles').select('disabled_at,deleted_at').eq('id',signedUser?.id||'').maybeSingle();
-  if(profile?.disabled_at||profile?.deleted_at){await client.auth.signOut();error('Acesso bloqueado. Contacte o contabilista.');}
-  redirect('/app');
+export async function signIn(form:FormData){
+ const email=text(form,'email').toLowerCase(),password=String(form.get('password')||'');
+ if(!email||!password)error('Preencha o email e a palavra-passe.');
+ const client=await supabase();
+ const {data:auth,error:failure}=await client.auth.signInWithPassword({email,password});
+ if(failure||!auth.user)error(signInError(failure?.code));
+ const {data:context,error:contextError}=await portalContext(client,auth.user.id);
+ if(contextError||!context)error('A autenticação foi concluída, mas não foi possível carregar a conta. Verifique se a atualização da base de dados foi aplicada.');
+ if(context.profile.disabled_at||context.profile.deleted_at){await client.auth.signOut();error('Acesso bloqueado. Contacte o contabilista.');}
+ if(!context.email_confirmed)error('Confirme o email da conta para continuar.');
+ if(IS_MANAGEMENT&&!context.is_staff){await client.auth.signOut();error('A conta está autenticada, mas não tem autorização de gestão. A Gestão é exclusiva da conta confirmada do contabilista.');}
+ if(!IS_MANAGEMENT&&context.is_staff){const url=process.env.NEXT_PUBLIC_GESTAO_URL;if(url&&/^https:\/\//.test(url))redirect(url);redirect('/contabilista');}
+ redirect('/app');
 }
 export async function signUp(form: FormData) {
   if (IS_MANAGEMENT) error('O registo de profissionais é feito pela administração.');

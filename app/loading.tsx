@@ -1,0 +1,1 @@
+export default function Loading(){return <main className="page-loading" role="status" aria-live="polite"><span className="navigation-spinner"/><p>A carregar a sua área…</p><div className="loading-placeholder"/><div className="loading-placeholder short"/></main>;}

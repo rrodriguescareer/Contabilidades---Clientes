@@ -10,8 +10,9 @@ export default async function Users({searchParams}:{searchParams:Promise<{q?:str
  const search=(params.q||'').trim().slice(0,200),literal=search.replace(/[\\%_]/g,'\\$&');
  let query=client.from('profiles').select('id,email,full_name,nif,birth_date,phone,street,postal_code,locality,disabled_at,deleted_at,onboarding_completed_at,irs_free,forced_discount_id',{count:'exact'}).order('created_at',{ascending:false}).range(page*50,page*50+49);
  if(search)query=query.ilike(search.includes('@')?'email':'full_name',`%${literal}%`);
- const {data:users,count,error}=await query;
- const {data:discounts}=await client.from('discount_codes').select('id,code,active').order('code');
+ const [{data:users,count,error},{data:discounts}]=await Promise.all([
+ query,client.from('discount_codes').select('id,code,active').order('code'),
+ ]);
  const ids=users?.map(u=>u.id)||[];
  const {data:invitations,error:invitationError}=ids.length?await client.from('household_invitations').select('id,email,accepted_by,accepted_at').in('accepted_by',ids):{data:[],error:null};
  return <ManagementShell title="Utilizadores" error={params.erro} message={params.mensagem}><section className="panel"><form method="get"><label>Pesquisar por nome ou email<input name="q" defaultValue={search} maxLength={200}/></label><button>Pesquisar</button></form><p>{count??0} utilizadores · página {page+1}</p>

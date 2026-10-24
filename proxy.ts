@@ -14,8 +14,9 @@ export async function proxy(request: NextRequest) {
       values.forEach(({name,value,options}) => response.cookies.set(name,value,options));
     },
   } });
-  await client.auth.getUser();
+  // Refresh cookies only. identity() verifies the signed claims and database permissions.
+  await client.auth.getSession();
   response.headers.set('Cache-Control','private, no-store');
   return response;
 }
-export const config = { matcher: ['/app/:path*','/entrar','/registar','/recuperar','/nova-password','/onboarding','/perfil','/pagamento','/convites/:path*'] };
+export const config = { matcher: ['/app/:path*','/nova-password','/onboarding','/perfil','/pagamento','/convites/:path*','/utilizadores','/empresas','/descontos','/pagamentos','/configuracao'] };

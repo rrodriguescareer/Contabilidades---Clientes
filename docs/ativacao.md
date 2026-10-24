@@ -2,9 +2,11 @@
 
 ## 1. Supabase já instalado
 
-Este projeto já recebeu as migrações 001–004. No mesmo projeto Supabase, abrir SQL Editor → New query e executar o conteúdo **completo** de `supabase/upgrade-005-007.sql`. É uma transação única, preserva utilizadores, documentos originais, faturas e aceitações anteriores. Não executar novamente o instalador inicial.
+Para a instalação existente, abrir SQL Editor → New query e executar o conteúdo **completo** de `supabase/update-current.sql`. O ficheiro verifica e aplica apenas as migrações 005–008 em falta. Pode ser executado novamente: preserva utilizadores, documentos, faturas, descontos e estados de bloqueio. Não executar novamente o instalador inicial.
 
-Numa base ainda vazia, usar `supabase/install.sql`, que inclui todas as migrações. Se 005 já tiver sido aplicada separadamente, aplicar apenas 006 e 007 ainda pendentes; não apagar tabelas para repetir uma instalação.
+No fim, a coluna `conta_gestao` indica se falta criar a conta do contabilista em Authentication → Users, confirmar o email ou rever um bloqueio. A atualização não cria nem guarda uma palavra-passe. A migração 008 recupera uma autorização profissional em falta apenas para o email confirmado do contabilista, sem reativar uma autorização deliberadamente desativada.
+
+Numa base ainda vazia, usar `supabase/install.sql`. O ficheiro anterior `upgrade-005-007.sql` continua disponível, mas `update-current.sql` é o caminho recomendado para a atualização atual.
 
 A versão dos termos e privacidade passa a `2026-10-23.3`. Os clientes existentes confirmam os textos atualizados e completam os novos campos de morada. Não se assume aceitação em nome deles.
 
@@ -89,3 +91,13 @@ Os bytes ficam em Supabase Storage privado, não como base64 em Postgres. A base
 A autorização e os links temporários continuam a ser verificados por conta. Ficheiros pendentes/rejeitados não são reutilizados automaticamente. Não foi implementado antivírus, OCR, eliminação automática de objetos ou uma política de retenção agendada.
 
 Bloquear um utilizador corta novas leituras com sessões existentes. A eliminação remove a autenticação através da API Admin e anonimiza o perfil da plataforma. Documentos, processos e elementos financeiros sujeitos a conservação permanecem; definir a política de retenção e apagamento legal com base na prestação profissional.
+
+## 8. Desempenho e atualização automática
+
+Cada separador pede apenas os dados que utiliza. Mensagens e Progresso fazem uma consulta de conteúdo cada; a visão geral usa contagens, sem carregar linhas de documentos nem faturas. A sessão usa uma única consulta de contexto, com verificação da assinatura do token e das permissões no banco. A cache React serve apenas o pedido atual, sem partilhar dados privados entre utilizadores.
+
+A mudança de conta/ano usa navegação da aplicação. Os botões apresentam o estado de espera imediatamente. Mensagens, progresso e documentos recebem atualizações Realtime quando a migração 008 é aplicada; existe atualização periódica enquanto a página está visível se a ligação Realtime estiver indisponível. Os ficheiros de download continuam sujeitos à autorização e expiração de ligações.
+
+Para um problema no acesso, distinguir: credenciais rejeitadas pelo Auth, email não confirmado, configuração Supabase em falta no Vercel da Gestão, migrações em falta e autorização profissional desativada. As mensagens da entrada foram separadas para tornar essa distinção visível. Sem acesso ao deployment e respetiva URL, a validação local não confirma o estado da aplicação publicada.
+
+A Gestão publicada indicada pelo responsável é `https://contabilidades-clientes.vercel.app`. O erro «Senhas inválidas» ocorre na autenticação, antes da autorização profissional. Se a mesma conta entrar no IRS, comparar `NEXT_PUBLIC_SUPABASE_URL` e a chave pública nas duas aplicações Vercel: devem apontar para o mesmo projeto Supabase. Se ambos rejeitarem, verificar a existência e confirmação da conta em Supabase → Authentication → Users e definir/recuperar a palavra-passe pelos mecanismos Auth. Uma migração de permissões não corrige uma palavra-passe incorreta nem cria uma conta Auth com password.
