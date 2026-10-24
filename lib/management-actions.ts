@@ -1,7 +1,7 @@
 'use server';
 import {redirect} from 'next/navigation';
 import {revalidatePath} from 'next/cache';
-import {session} from './auth';
+import {ownerSession as session} from './auth';
 import {adminClient,adminConfigured} from './admin-client';
 import {uuid} from './data';
 import {validEmail} from './validation';
@@ -65,4 +65,20 @@ export async function createDiscount(form:FormData){
 export async function toggleDiscount(form:FormData){
  const {client}=await session();const id=text(form,'discount');if(!uuid(id))finish('/descontos','Código inválido.',true);
  const {error}=await client.from('discount_codes').update({active:form.get('active')==='true'}).eq('id',id);if(error)finish('/descontos','Não foi possível alterar.',true);finish('/descontos','Código atualizado.');
+}
+
+export async function setAccountant(form:FormData){
+ const {client}=await session();const target=text(form,'user');if(!uuid(target))finish('/utilizadores','Utilizador inválido.',true);
+ const {error}=await client.rpc('set_staff_access',{target,enabled:form.get('enabled')==='true'});if(error)finish('/utilizadores','Não foi possível alterar o perfil de contabilista.',true);
+ finish('/utilizadores','Perfil atualizado. O acesso profissional exige email confirmado.');
+}
+export async function inviteManagedUser(form:FormData){
+ const {client}=await session();const email=text(form,'email').toLowerCase(),role=text(form,'role');
+ if(!validEmail(email)||!['client','accountant'].includes(role)||!adminConfigured()||process.env.AUTH_EMAIL_BRANDING_READY!=='true')finish('/utilizadores','Confirme o email e as configurações de administração e envio de email.',true);
+ const {siteUrl}=await import('./supabase');let origin=role==='accountant'?siteUrl():(process.env.NEXT_PUBLIC_EMPRESAS_URL||process.env.NEXT_PUBLIC_IRS_URL||'');
+ try{const url=new URL(origin||'');if(url.protocol!=='https:')throw new Error();origin=url.origin;}catch{finish('/utilizadores','Configure o endereço público da gestão para contabilistas e do IRS ou Empresas para clientes.',true);}
+ const {data,error}=await adminClient().auth.admin.inviteUserByEmail(email,{redirectTo:`${origin}/auth/callback?next=/nova-password`});
+ if(error||!data.user)finish('/utilizadores','Não foi possível criar o convite. Confirme se o email já está registado.',true);
+ if(role==='accountant'){const {error:grant}=await client.rpc('set_staff_access',{target:data.user.id,enabled:true});if(grant)finish('/utilizadores','Convite criado; não foi possível atribuir o perfil. Atribua-o na lista de utilizadores.',true);}
+ finish('/utilizadores','Convite enviado. Pode associar o cliente às empresas pretendidas.');
 }

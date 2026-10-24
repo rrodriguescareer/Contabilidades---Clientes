@@ -1,7 +1,8 @@
 'use server';
 import {redirect} from 'next/navigation';
-import {session} from './auth';
+import {ownerSession as session} from './auth';
 import {adminClient} from './admin-client';
+import {paymentConfiguration} from './payment-configuration';
 import {reconcilePayment,paymentsReady} from './revolut';
 import {revolutRequest,orderId,orderMatches,checkoutUrl} from './revolut-core';
 import {uuid} from './data';
@@ -13,10 +14,11 @@ export async function verifyPayment(form:FormData){
 }
 export async function recoverPayment(form:FormData){
  const {client}=await session();const id=String(form.get('checkout')||''),provider=String(form.get('order_id')||'').trim();
- if(!uuid(id)||!orderId(provider)||!paymentsReady())done('Verifique a ordem e a configuração privada da Revolut nesta aplicação.',true);
+ if(!uuid(id)||!orderId(provider)||!await paymentsReady())done('Verifique a ordem e a configuração privada da Revolut nesta aplicação.',true);
  const {data:payment}=await client.from('irs_checkouts').select('id,amount_cents,state').eq('id',id).single();if(!payment||!['creating','unknown'].includes(payment.state))done('A tentativa não pode ser recuperada por esta opção.',true);
  try{
-  const order=await revolutRequest(process.env.REVOLUT_MERCHANT_SECRET_KEY!,process.env.REVOLUT_API_VERSION!,`/orders/${provider}`);
+  const config=await paymentConfiguration();
+  const order=await revolutRequest(config.key,config.version,`/orders/${provider}`);
   if(!orderMatches(order,{id:provider,reference:payment.id,amount:payment.amount_cents}))done('A referência, valor ou moeda da ordem não corresponde a este processo.',true);
   const {error}=await adminClient().rpc('attach_revolut_order',{attempt:id,provider_id:provider,provider_url:checkoutUrl(order.checkout_url)});if(error)throw new Error();
   await reconcilePayment(id);

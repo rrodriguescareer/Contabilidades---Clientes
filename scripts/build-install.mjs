@@ -68,6 +68,7 @@ export async function buildCurrentUpgradeSql(){
   ['202610230006_checkout.sql',"to_regclass('public.irs_checkouts') is null"],
   ['202610230007_document_deduplication.sql',"not exists(select 1 from information_schema.columns where table_schema='public' and table_name='documents' and column_name='content_hash')"],
   ['202610240008_session_context.sql',"to_regprocedure('public.get_portal_context()') is null"],
+  ['202610240009_administration.sql',"to_regclass('public.payment_settings') is null"],
  ];
  const parts=[];
  for(const [name,condition]of migrations){
@@ -75,7 +76,7 @@ export async function buildCurrentUpgradeSql(){
   const delimiter='$migration_'+name.slice(0,12)+'$';
   parts.push(`if ${condition} then\n execute ${delimiter}\n${sql}\n${delimiter};\nend if;`);
  }
- return `-- ATUALIZACAO ATUAL: aplica apenas as migracoes 005–008 ainda em falta.
+ return `-- ATUALIZACAO ATUAL: aplica apenas as migracoes 005–009 ainda em falta.
 -- Pode repetir: preserva contas, estados de bloqueio e dados existentes.
 begin;
 do $update_current$

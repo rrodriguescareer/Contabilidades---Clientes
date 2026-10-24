@@ -16,7 +16,8 @@
     "test:revolut": "node --test tests/revolut.test.mjs",
     "test:upgrade": "node --test tests/upgrade.test.mjs",
     "test:dashboard": "node --test tests/dashboard.test.mjs",
-    "test:auth": "node --test tests/auth-access.test.mjs"
+    "test:auth": "node --test tests/auth-access.test.mjs",
+    "test:secrets": "node --test tests/secret-crypto.test.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.7",

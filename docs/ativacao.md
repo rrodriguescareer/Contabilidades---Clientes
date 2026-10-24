@@ -2,7 +2,7 @@
 
 ## 1. Supabase já instalado
 
-Para a instalação existente, abrir SQL Editor → New query e executar o conteúdo **completo** de `supabase/update-current.sql`. O ficheiro verifica e aplica apenas as migrações 005–008 em falta. Pode ser executado novamente: preserva utilizadores, documentos, faturas, descontos e estados de bloqueio. Não executar novamente o instalador inicial.
+Para a instalação existente, abrir SQL Editor → New query e executar o conteúdo **completo** de `supabase/update-current.sql`. O ficheiro verifica e aplica apenas as migrações 005–009 em falta. Pode ser executado novamente: preserva utilizadores, documentos, faturas, descontos e estados de bloqueio. Não executar novamente o instalador inicial.
 
 No fim, a coluna `conta_gestao` indica se falta criar a conta do contabilista em Authentication → Users, confirmar o email ou rever um bloqueio. A atualização não cria nem guarda uma palavra-passe. A migração 008 recupera uma autorização profissional em falta apenas para o email confirmado do contabilista, sem reativar uma autorização deliberadamente desativada.
 
@@ -101,3 +101,12 @@ A mudança de conta/ano usa navegação da aplicação. Os botões apresentam o 
 Para um problema no acesso, distinguir: credenciais rejeitadas pelo Auth, email não confirmado, configuração Supabase em falta no Vercel da Gestão, migrações em falta e autorização profissional desativada. As mensagens da entrada foram separadas para tornar essa distinção visível. Sem acesso ao deployment e respetiva URL, a validação local não confirma o estado da aplicação publicada.
 
 A Gestão publicada indicada pelo responsável é `https://contabilidades-clientes.vercel.app`. O erro «Senhas inválidas» ocorre na autenticação, antes da autorização profissional. Se a mesma conta entrar no IRS, comparar `NEXT_PUBLIC_SUPABASE_URL` e a chave pública nas duas aplicações Vercel: devem apontar para o mesmo projeto Supabase. Se ambos rejeitarem, verificar a existência e confirmação da conta em Supabase → Authentication → Users e definir/recuperar a palavra-passe pelos mecanismos Auth. Uma migração de permissões não corrige uma palavra-passe incorreta nem cria uma conta Auth com password.
+
+
+### Atualização administrativa 009
+
+A administração de utilizadores, empresas, descontos e configurações pertence ao titular da gestão. Os contabilistas criados por convite ficam num papel profissional revogável. Configure `NEXT_PUBLIC_IRS_URL` na Gestão para que os convites de clientes abram a aplicação de cliente; `NEXT_PUBLIC_SITE_URL` deve apontar à própria Gestão para os convites de contabilistas. Adicione os dois destinos `/auth/callback` à lista de redirecionamentos permitidos do Supabase. A plataforma Empresas, quando criada, terá o seu próprio destino.
+
+Para as novas configurações cifradas, siga «Administração e campanha IRS 2026» no README. As migrações não alteram contas Auth, não definem palavras-passe e não ativam a cobrança. Uma conta Merchant, as duas aplicações com variáveis privadas e a validação real do checkout/webhook continuam necessárias.
+
+No Supabase → Authentication → Email Templates → Invite user, usar `supabase/templates/invite.html` e o assunto **RR - Ativação do seu acesso**. O template usa o destino indicado pela Gestão e o token de convite no callback do servidor (não depende de uma sessão em fragmentos do URL). Manter o `next=/nova-password` no destino criado pela aplicação. Confirmar os templates e o remetente antes de ativar `AUTH_EMAIL_BRANDING_READY`.

@@ -145,5 +145,27 @@ test('production registration, administration, quotations, checkout and private 
    assert.ok((await db.query('select deleted_at from public.profiles where id=$1',[ids.a])).rows[0].deleted_at);
    assert.ok((await db.query('select count(*)::int as n from public.documents where account_id=$1',[a])).rows[0].n>0);
   });
+  await t.test('only the administrator can grant professional roles or manage integration credentials',async()=>{
+   const professional='30000000-0000-4000-8000-000000000099';
+   await db.exec('reset role');await db.query('insert into auth.users(id,email,email_confirmed_at) values($1,$2,now())',[professional,'professional@example.com']);
+   await actor(professional);assert.equal((await db.query('select public.is_staff() as staff')).rows[0].staff,false);
+   await assert.rejects(db.query('select public.set_staff_access($1,true)',[professional]));
+   await actor(ids.staff);await db.query('select public.set_staff_access($1,true)',[professional]);
+   await actor(professional);assert.equal((await db.query('select public.is_staff() as staff')).rows[0].staff,true);
+   assert.equal((await db.query('select public.is_platform_owner() as owner')).rows[0].owner,false);
+   assert.ok((await db.query('select * from public.irs_cases')).rows.length>0);
+   await assert.rejects(db.query('select public.set_user_blocked($1,true)',[ids.b]));
+   await assert.rejects(db.query('select public.set_client_billing($1,true,null)',[ids.b]));
+   await assert.rejects(db.query('select public.create_company($1,$2,$3)',['Forbidden','500000099',ids.b]));
+   await assert.rejects(db.query('select * from public.integration_secrets'));
+   assert.equal((await db.query('select * from public.payment_settings')).rows.length,0);
+   await actor(ids.staff);await assert.rejects(db.query('select * from public.integration_secrets'));
+   await actor(ids.staff,'service_role');await db.query("insert into public.integration_secrets(scope,encrypted_value) values('cegid:example','ciphertext-fixture')");
+   await actor(ids.b);assert.equal((await db.query('select public.get_portal_context() as c')).rows[0].c.accounts.length,1);
+   assert.equal((await db.query('select public.get_portal_context() as c')).rows[0].c.cases.every(c=>c.account_id===b&&c.campaign===2026),true);
+   await assert.rejects(db.query('select * from public.integration_secrets'));
+   await actor(ids.staff);await db.query('select public.set_staff_access($1,false)',[professional]);
+   await actor(professional);assert.equal((await db.query('select * from public.irs_cases')).rows.length,0);
+  });
  }finally{await db.close();}
 });

@@ -7,9 +7,11 @@ import {portalContext} from './portal-context';
 export const identity=cache(async function identity(){
  if(!configuration())redirect('/entrar');
  const client=await supabase();
- const {data:verified,error}=await client.auth.getClaims();
- const id=verified?.claims.sub;if(error||!id)redirect('/entrar');
- const {data:context,error:contextError}=await portalContext(client,id);
+ // getSession only retrieves the token. PostgREST validates its signature and expiry.
+ // get_portal_context derives the identity from auth.uid(), never from cookie metadata.
+ const {data:stored,error}=await client.auth.getSession();
+ if(error||!stored.session?.access_token)redirect('/entrar');
+ const {data:context,error:contextError}=await portalContext(client);
  if(contextError||!context)redirect('/entrar?erro=Não%20foi%20possível%20carregar%20a%20conta.%20Verifique%20a%20atualização%20da%20base%20de%20dados.');
  if(context.profile.disabled_at||context.profile.deleted_at)redirect('/entrar?erro=Acesso%20bloqueado.%20Contacte%20o%20contabilista.');
  if(!context.email_confirmed)redirect('/entrar?erro=Confirme%20o%20seu%20email%20para%20continuar.');
@@ -25,3 +27,9 @@ export const session=cache(async function session(){
  }
  return current;
 });
+
+export async function ownerSession(){
+ const current=await session();
+ if(current.context.email.toLowerCase()!=='contabilidade.rubenrodrigues@gmail.com')redirect('/app?erro=Apenas%20o%20administrador%20pode%20gerir%20este%20módulo.');
+ return current;
+}

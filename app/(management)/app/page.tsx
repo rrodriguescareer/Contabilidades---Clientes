@@ -1,0 +1,10 @@
+import {session} from '@/lib/auth';
+import ManagementShell from '@/components/management-shell';
+import PortalLink from '@/components/portal-link';
+export default async function ManagementOverview({searchParams}:{searchParams:Promise<{erro?:string}>}){
+ const {client,context}=await session(),params=await searchParams;
+ const owner=context.email.toLowerCase()==='contabilidade.rubenrodrigues@gmail.com';
+ const {data,error}=await client.rpc('management_overview');
+ const modules=owner?[['/utilizadores','Utilizadores e acessos','Clientes, contabilistas, bloqueios e condições de preço.'],['/empresas','Empresas','Empresas, clientes associados e ligações Cegid por empresa.'],['/processos','IRS 2026','Acompanhamento, documentos e comunicação com os clientes.'],['/descontos','Descontos','Códigos, destinatários, validade e limites de utilização.'],['/faturacao','Faturação','Documentos emitidos e valores recebidos por serviço.'],['/configuracao','Configurações','Revolut, notificações e integrações do serviço.']]:[['/processos','IRS 2026','Acompanhamento, documentos e comunicação com os clientes.']];
+ return <ManagementShell title="O seu centro de gestão." error={params.erro}><p>Administre os clientes e os serviços a partir de um único lugar.</p>{error?<div className="alert">Aplique a atualização SQL para disponibilizar os indicadores de gestão.</div>:<div className="admin-metrics">{(owner?[['Utilizadores',data?.users],['Empresas',data?.companies],['IRS em acompanhamento',data?.open_cases],['Pagamentos por confirmar',data?.pending_payments]]:[['IRS em acompanhamento',data?.open_cases]]).map(([label,value])=><div key={label} className="admin-metric"><span>{label}</span><strong>{value??0}</strong></div>)}</div>}<div className="admin-module-grid">{modules.map(([href,title,description])=><PortalLink key={href} href={href} className="admin-module"><span className="module-arrow">↗</span><h2>{title}</h2><p>{description}</p><small>Abrir módulo</small></PortalLink>)}</div></ManagementShell>;
+}

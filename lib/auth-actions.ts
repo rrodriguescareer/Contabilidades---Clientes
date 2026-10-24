@@ -1,6 +1,5 @@
 'use server';
 import { redirect } from 'next/navigation';
-import {portalContext} from './portal-context';
 import {signInError} from './auth-errors';
 import { supabase, siteUrl } from './supabase';
 import { IS_MANAGEMENT } from './app';
@@ -10,14 +9,12 @@ export async function signIn(form:FormData){
  const email=text(form,'email').toLowerCase(),password=String(form.get('password')||'');
  if(!email||!password)error('Preencha o email e a palavra-passe.');
  const client=await supabase();
+ const started=performance.now();
  const {data:auth,error:failure}=await client.auth.signInWithPassword({email,password});
+ console.info(JSON.stringify({event:'rr_login_timing',stage:'password',ms:Math.round(performance.now()-started)}));
  if(failure||!auth.user)error(signInError(failure?.code));
- const {data:context,error:contextError}=await portalContext(client,auth.user.id);
- if(contextError||!context)error('A autenticação foi concluída, mas não foi possível carregar a conta. Verifique se a atualização da base de dados foi aplicada.');
- if(context.profile.disabled_at||context.profile.deleted_at){await client.auth.signOut();error('Acesso bloqueado. Contacte o contabilista.');}
- if(!context.email_confirmed)error('Confirme o email da conta para continuar.');
- if(IS_MANAGEMENT&&!context.is_staff){await client.auth.signOut();error('A conta está autenticada, mas não tem autorização de gestão. A Gestão é exclusiva da conta confirmada do contabilista.');}
- if(!IS_MANAGEMENT&&context.is_staff){const url=process.env.NEXT_PUBLIC_GESTAO_URL;if(url&&/^https:\/\//.test(url))redirect(url);redirect('/contabilista');}
+ // The protected destination verifies database permissions once using session().
+ // Avoid a duplicate context lookup before and after this redirect.
  redirect('/app');
 }
 export async function signUp(form: FormData) {

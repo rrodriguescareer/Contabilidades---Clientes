@@ -10,6 +10,13 @@ export const supabase=cache(async function supabase() {
   if (!config) throw new Error('Configuração Supabase em falta.');
   const store = await cookies();
   return createServerClient(config.url, config.key, {
+    global:{fetch:async(input,init)=>{
+      const started=performance.now();
+      try{return await fetch(input,init);}finally{
+       const ms=Math.round(performance.now()-started);
+       if(ms>750){const url=new URL(typeof input==='string'?input:input instanceof URL?input.href:input.url);const endpoint=url.pathname.startsWith('/auth/')?'auth':url.pathname.split('/').slice(0,5).join('/');console.info(JSON.stringify({event:'rr_backend_timing',endpoint,ms}));}
+      }
+    }},
     cookies: { getAll: () => store.getAll(), setAll: entries => {
       try { entries.forEach(({ name, value, options }) => store.set(name, value, options)); } catch { /* Refreshed by proxy for Server Components. */ }
     } },

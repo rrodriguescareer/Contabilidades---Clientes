@@ -1,4 +1,4 @@
-import {session} from '@/lib/auth';
+import {ownerSession as session} from '@/lib/auth';
 import ManagementShell from '@/components/management-shell';
 import {Submit} from '@/components/forms';
 import {createDiscount,toggleDiscount} from '@/lib/management-actions';

@@ -17,3 +17,8 @@ test('permission errors fail closed instead of falling back to a role from metad
  const client={async rpc(){return {data:null,error:{code:'42501'}};},from(){throw new Error('Fallback should not run');}};
  const result=await portalContext(client,'user-a');assert.equal(result.data,null);assert.equal(result.error.code,'42501');
 });
+
+test('a verified RPC identity mismatch fails closed even if the browser cookie claims another user',async()=>{
+ const client={async rpc(){return {data:{id:'actual-user',email:'client@example.com',is_staff:false},error:null};},from(){throw new Error('Never query the identity claimed by an untrusted cookie');}};
+ assert.equal((await portalContext(client,'owner-id')).data,null);
+});
