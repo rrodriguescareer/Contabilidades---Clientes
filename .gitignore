@@ -5,3 +5,7 @@ node_modules/
 *.tsbuildinfo
 .vercel/
 .env*.local
+
+# Duplicados que a sincronizacao da pasta Desktop cria ("ficheiro 2.ts").
+* 2.*
+* [0-9].*

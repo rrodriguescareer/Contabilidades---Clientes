@@ -3,7 +3,11 @@ import {pathToFileURL} from 'node:url';
 
 const directory=new URL('../supabase/migrations/',import.meta.url);
 export async function buildInstallSql(){
- const names=(await readdir(directory)).filter(name=>/^\d+_.*\.sql$/.test(name)).sort();
+ // Nome restrito de proposito: a sincronizacao da pasta Desktop cria copias
+ // como "202610250010_espaco_vistas 2.sql", que o padrao antigo aceitava e
+ // metia no pacote a seguir ao original, aplicando a migracao duas vezes.
+ const names=(await readdir(directory)).filter(name=>/^\d+_[a-z0-9_]+\.sql$/.test(name)).sort();
+ if(!names.length)throw new Error('Nenhuma migracao encontrada em supabase/migrations/');
  const parts=[];
  for(const name of names){
   const sql=await readFile(new URL(name,directory),'utf8');
