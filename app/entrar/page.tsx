@@ -6,7 +6,7 @@ import { signIn } from '@/lib/auth-actions';
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Entrar' };
 
-export default async function Entrar({ searchParams }: { searchParams: Promise<{ erro?: string; mensagem?: string }> }) {
+export default async function Entrar({ searchParams }: { searchParams: Promise<{ erro?: string; mensagem?: string; destino?: string }> }) {
   const parametros = await searchParams;
   return (
     <EcraAutenticacao
@@ -17,6 +17,7 @@ export default async function Entrar({ searchParams }: { searchParams: Promise<{
       rodape={<Link href="/recuperar">Esqueci-me da palavra-passe</Link>}
     >
       <form action={signIn}>
+        <input type="hidden" name="destino" value={parametros.destino ?? ''} />
         <label className="campo">
           <span>Email</span>
           <input name="email" type="email" className="entrada" autoComplete="email" required maxLength={254} />
