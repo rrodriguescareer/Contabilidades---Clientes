@@ -19,4 +19,4 @@ export async function proxy(request: NextRequest) {
   response.headers.set('Cache-Control','private, no-store');
   return response;
 }
-export const config = { matcher: ['/app/:path*','/nova-password','/onboarding','/perfil','/pagamento','/convites/:path*','/utilizadores','/empresas','/descontos','/pagamentos','/configuracao','/processos','/irs','/faturacao','/alertas'] };
+export const config = { matcher: ['/app/:path*','/nova-password','/utilizadores','/empresas','/descontos','/pagamentos','/configuracao','/faturacao'] };
