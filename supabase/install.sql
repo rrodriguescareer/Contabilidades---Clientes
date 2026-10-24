@@ -1042,6 +1042,171 @@ alter policy profiles_read on public.profiles using(id=(select auth.uid()) or (s
 alter policy access_read on public.account_access using(user_id=(select auth.uid()) or (select public.is_staff()));
 alter policy alert_read on public.task_alerts using((select public.is_staff()));
 
+-- Source: 202610250010_espaco_vistas 2.sql
+-- Uma vista, uma ida à base de dados.
+--
+-- Antes, cada separador do portal disparava entre quatro e onze pedidos ao
+-- PostgREST. Com as funções do Vercel em arn1 e o Supabase em eu-north-1 isso
+-- ainda custava pouco, mas o custo multiplicava-se por cada mudança de
+-- separador. Estas funções devolvem o ecrã inteiro num único JSON.
+--
+-- São `security invoker`: a autorização continua a ser feita pelas políticas de
+-- RLS já existentes, não por verificações repetidas aqui dentro.
+
+
+create or replace function public.espaco_irs(vista text, processo uuid default null)
+returns jsonb language plpgsql stable as $$
+declare conta uuid; eu uuid := auth.uid(); dados jsonb := '{}'::jsonb;
+begin
+  if eu is null then raise exception 'Autenticação necessária' using errcode='42501'; end if;
+
+  if processo is not null then
+    -- A RLS decide o que é visível. Se não vier nada, o processo não é desta conta.
+    select account_id into conta from public.irs_cases where id = processo;
+    if conta is null then raise exception 'Processo indisponível' using errcode='42501'; end if;
+  end if;
+
+  if processo is null then return jsonb_build_object('vista', vista); end if;
+
+  if vista = 'resumo' then
+    dados := jsonb_build_object(
+      'pessoas', (select count(*) from public.case_people where case_id = processo),
+      'rendimentos', (select count(*) from public.income_records where case_id = processo and category <> 'deduction'),
+      'despesas', (select count(*) from public.income_records where case_id = processo and category = 'deduction'),
+      'documentos', (select count(*) from public.documents where case_id = processo and state <> 'pending'),
+      'mensagens', (select count(*) from public.messages where case_id = processo),
+      'ultimo_progresso', (select to_jsonb(p) from (
+        select title, body, created_at from public.progress_events
+        where case_id = processo order by created_at desc limit 1) p),
+      'ultima_mensagem', (select to_jsonb(m) from (
+        select body, author_id = eu as minha, created_at from public.messages
+        where case_id = processo order by created_at desc limit 1) m),
+      'pagamento', (select to_jsonb(c) from (
+        select id, state, amount_cents, paid_at, created_at from public.irs_checkouts
+        where case_id = processo order by created_at desc limit 1) c));
+
+  elsif vista = 'agregado' then
+    dados := jsonb_build_object(
+      'pessoas', (select coalesce(jsonb_agg(to_jsonb(p) order by p.ordem, p.full_name), '[]'::jsonb) from (
+        select pe.id, pe.full_name, pe.birth_date, pe.nif, pe.email, pe.tax_two_factor,
+               cp.relationship,
+               case cp.relationship when 'titular' then 0 when 'conjuge' then 1
+                 when 'descendente' then 2 when 'ascendente' then 3 else 4 end as ordem
+        from public.people pe
+        join public.case_people cp on cp.person_id = pe.id and cp.case_id = processo) p),
+      'disponiveis', (select coalesce(jsonb_agg(to_jsonb(d) order by d.full_name), '[]'::jsonb) from (
+        select pe.id, pe.full_name, pe.nif from public.people pe
+        where pe.account_id = conta
+          and not exists (select 1 from public.case_people cp where cp.case_id = processo and cp.person_id = pe.id)) d),
+      'convites', (select coalesce(jsonb_agg(to_jsonb(i) order by i.created_at desc), '[]'::jsonb) from (
+        select id, person_id, email, state, expires_at, accepted_at, created_at
+        from public.household_invitations where account_id = conta) i));
+
+  elsif vista = 'rendimentos' then
+    dados := jsonb_build_object(
+      'rendimentos', (select coalesce(jsonb_agg(to_jsonb(r) order by r.created_at), '[]'::jsonb) from (
+        select i.id, i.title, i.category, i.person_id, i.property_id, i.mode, i.details, i.created_at,
+               (select count(*) from public.documents d where d.income_id = i.id and d.state <> 'pending') as documentos
+        from public.income_records i where i.case_id = processo) r),
+      'imoveis', (select coalesce(jsonb_agg(to_jsonb(v) order by v.label), '[]'::jsonb) from (
+        select id, label, description from public.property_assets where case_id = processo) v),
+      'pessoas', (select coalesce(jsonb_agg(to_jsonb(p) order by p.full_name), '[]'::jsonb) from (
+        select pe.id, pe.full_name, cp.relationship from public.people pe
+        join public.case_people cp on cp.person_id = pe.id and cp.case_id = processo) p));
+
+  elsif vista = 'documentos' then
+    dados := jsonb_build_object(
+      'documentos', (select coalesce(jsonb_agg(to_jsonb(d) order by d.created_at desc), '[]'::jsonb) from (
+        select dc.id, dc.kind, dc.file_name, dc.state, dc.income_id, dc.file_size, dc.mime_type, dc.created_at,
+               dc.uploaded_by = eu as meu, i.title as rendimento, i.category
+        from public.documents dc
+        left join public.income_records i on i.id = dc.income_id
+        where dc.case_id = processo and dc.state <> 'pending') d),
+      'rendimentos', (select coalesce(jsonb_agg(to_jsonb(r) order by r.title), '[]'::jsonb) from (
+        select id, title, category from public.income_records where case_id = processo) r));
+
+  elsif vista = 'mensagens' then
+    -- Sem nomes: o cliente não lê o perfil do contabilista nem o contrário.
+    -- Cada lado sabe quem é o outro pelo contexto do ecrã.
+    dados := jsonb_build_object(
+      'mensagens', (select coalesce(jsonb_agg(to_jsonb(m) order by m.created_at), '[]'::jsonb) from (
+        select id, body, author_id = eu as minha, created_at
+        from public.messages where case_id = processo
+        order by created_at desc limit 200) m));
+
+  elsif vista = 'progresso' then
+    dados := jsonb_build_object(
+      'eventos', (select coalesce(jsonb_agg(to_jsonb(p) order by p.created_at desc), '[]'::jsonb) from (
+        select id, title, body, created_at from public.progress_events
+        where case_id = processo order by created_at desc limit 100) p));
+
+  elsif vista = 'pagamento' then
+    dados := jsonb_build_object(
+      'tentativas', (select coalesce(jsonb_agg(to_jsonb(c) order by c.created_at desc), '[]'::jsonb) from (
+        select id, state, amount_cents, discount_cents, quote, checkout_url, paid_at, created_at
+        from public.irs_checkouts where case_id = processo order by created_at desc limit 20) c),
+      'faturas', (select coalesce(jsonb_agg(to_jsonb(f) order by f.issued_at desc), '[]'::jsonb) from (
+        select i.id, i.reference, i.issued_at, i.due_at, i.total, i.currency,
+               coalesce((select sum(p.amount) from public.payments p where p.invoice_id = i.id), 0) as pago
+        from public.invoices i where i.account_id = conta) f));
+
+  else
+    raise exception 'Vista desconhecida: %', vista using errcode='22023';
+  end if;
+
+  return dados || jsonb_build_object('vista', vista, 'processo', processo);
+end $$;
+
+revoke all on function public.espaco_irs(text, uuid) from public, anon;
+grant execute on function public.espaco_irs(text, uuid) to authenticated;
+
+
+-- Ecrã do contabilista. A mesma ideia, mas atravessa todos os clientes.
+create or replace function public.espaco_gabinete(vista text, processo uuid default null)
+returns jsonb language plpgsql stable as $$
+declare eu uuid := auth.uid();
+begin
+  if eu is null or not public.is_staff() then
+    raise exception 'Apenas o contabilista acede a este espaço' using errcode='42501';
+  end if;
+
+  if vista = 'fila' then
+    return jsonb_build_object('vista', vista,
+      'processos', (select coalesce(jsonb_agg(to_jsonb(p) order by p.ordem, p.created_at), '[]'::jsonb) from (
+        select c.id, c.account_id, c.status, c.created_at, a.name as cliente,
+               case c.status when 'review' then 0 when 'validation' then 1 when 'authorization' then 2
+                 when 'missing' then 3 when 'collecting' then 4 when 'submitted' then 5 else 6 end as ordem,
+               (select count(*) from public.documents d where d.case_id = c.id and d.state = 'uploaded') as por_rever,
+               (select count(*) from public.messages m where m.case_id = c.id and m.author_id <> eu) as mensagens_cliente,
+               (select max(m.created_at) from public.messages m where m.case_id = c.id) as ultima_mensagem,
+               (select x.state from public.irs_checkouts x where x.case_id = c.id order by x.created_at desc limit 1) as pagamento
+        from public.irs_cases c join public.client_accounts a on a.id = c.account_id
+        where c.campaign = 2026) p),
+      'resumo', jsonb_build_object(
+        'total', (select count(*) from public.irs_cases where campaign = 2026),
+        'a_rever', (select count(*) from public.irs_cases where campaign = 2026 and status in ('review','validation','authorization')),
+        'em_recolha', (select count(*) from public.irs_cases where campaign = 2026 and status = 'collecting'),
+        'submetidos', (select count(*) from public.irs_cases where campaign = 2026 and status in ('submitted','completed')),
+        'alertas', (select count(*) from public.task_alerts where resolved_at is null)));
+
+  elsif vista = 'alertas' then
+    return jsonb_build_object('vista', vista,
+      'alertas', (select coalesce(jsonb_agg(to_jsonb(a) order by a.created_at desc), '[]'::jsonb) from (
+        select t.id, t.kind, t.created_at, p.full_name as pessoa, c.name as cliente, t.account_id
+        from public.task_alerts t
+        join public.people p on p.id = t.person_id
+        join public.client_accounts c on c.id = t.account_id
+        where t.resolved_at is null) a));
+
+  else
+    -- Qualquer outra vista é a vista do cliente, vista de fora.
+    return public.espaco_irs(vista, processo);
+  end if;
+end $$;
+
+revoke all on function public.espaco_gabinete(text, uuid) from public, anon;
+grant execute on function public.espaco_gabinete(text, uuid) to authenticated;
+
 -- Source: 202610250010_espaco_vistas.sql
 -- Uma vista, uma ida à base de dados.
 --
@@ -1248,6 +1413,91 @@ end $ano$;
 
 alter function public.espaco_irs(text, uuid) set search_path = '';
 alter function public.espaco_gabinete(text, uuid) set search_path = '';
+
+-- Source: 202610250013_desempenho.sql
+-- Avisos de desempenho da auditoria do Supabase.
+--
+-- Nada disto se nota hoje, com um punhado de registos. Nota-se quando a
+-- campanha encher: sem índice, cada verificação de chave estrangeira e cada
+-- apagamento na tabela referenciada passa a varrer a tabela inteira.
+
+
+-- 1. Políticas que reavaliavam auth.uid() linha a linha -----------------------
+--
+-- O resto da base já envolve estas chamadas num subselect, o que faz o
+-- Postgres calculá-las uma vez por consulta em vez de uma vez por linha.
+-- Estas três escaparam. As condições são as mesmas; muda só quando são
+-- avaliadas.
+--
+-- can_read_account(account_id) fica onde está: depende da linha, não pode ser
+-- içado para fora sem mudar o que a política decide.
+
+alter policy companies_read on public.companies using (
+  (select public.is_staff())
+  or (
+    (select public.user_enabled(auth.uid()))
+    and exists (
+      select 1 from public.company_users cu
+      where cu.company_id = companies.id
+        and cu.user_id = (select auth.uid())
+        and cu.active
+    )
+  )
+);
+
+alter policy company_users_read on public.company_users using (
+  (select public.is_staff())
+  or (user_id = (select auth.uid()) and (select public.user_enabled(auth.uid())))
+);
+
+alter policy household_invitations_read on public.household_invitations using (
+  public.can_read_account(account_id) or accepted_by = (select auth.uid())
+);
+
+-- 2. Chave estrangeira duplicada ---------------------------------------------
+--
+-- payments tinha duas chaves estrangeiras idênticas sobre invoice_id. Cada
+-- inserção era verificada duas vezes, pela mesma regra.
+
+alter table public.payments drop constraint if exists payments_invoice_id_fkey1;
+
+-- 3. Índices de cobertura das chaves estrangeiras ----------------------------
+--
+-- Só as que não tinham já um índice com as suas colunas à cabeça. Onde o
+-- índice existente servia — documents_case_id_idx, irs_checkouts_case_created,
+-- messages_case_id_created_at_idx — não se acrescenta nada.
+
+create index if not exists case_people_account_case on public.case_people (account_id, case_id);
+create index if not exists case_people_account_person on public.case_people (account_id, person_id);
+
+create index if not exists company_users_user on public.company_users (user_id);
+create index if not exists discount_codes_allowed_user on public.discount_codes (allowed_user);
+
+create index if not exists documents_account_case_income on public.documents (account_id, case_id, income_id);
+create index if not exists documents_uploaded_by on public.documents (uploaded_by);
+
+create index if not exists household_invitations_accepted_by on public.household_invitations (accepted_by);
+
+create index if not exists income_records_account_case_property on public.income_records (account_id, case_id, property_id);
+create index if not exists income_records_case_person on public.income_records (case_id, person_id);
+
+create index if not exists invitation_requests_requested_by on public.invitation_requests (requested_by);
+
+create index if not exists irs_checkouts_account_case on public.irs_checkouts (account_id, case_id);
+create index if not exists irs_checkouts_user on public.irs_checkouts (user_id);
+
+create index if not exists messages_account_case on public.messages (account_id, case_id);
+create index if not exists messages_author on public.messages (author_id);
+
+create index if not exists payments_account_invoice on public.payments (account_id, invoice_id);
+create index if not exists payments_invoice on public.payments (invoice_id);
+
+create index if not exists profiles_forced_discount on public.profiles (forced_discount_id);
+
+create index if not exists progress_events_account_case on public.progress_events (account_id, case_id);
+create index if not exists progress_events_author on public.progress_events (author_id);
+
+create index if not exists staff_users_managed_by on public.staff_users (managed_by);
 
 commit;
 select 'Instalacao concluida: estrutura IRS e Gestao criada.' as resultado;
