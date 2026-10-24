@@ -1,0 +1,4 @@
+import Link from 'next/link';
+export default function ManagementShell({title,children,error,message}:{title:string;children:React.ReactNode;error?:string;message?:string}){
+ return <main className="standalone" id="main"><span className="eyebrow">RR · GESTÃO CENTRAL</span><nav className="module-links" aria-label="Módulos de gestão"><Link className="button" href="/app">Processos IRS</Link><Link className="button" href="/utilizadores">Utilizadores</Link><Link className="button" href="/empresas">Empresas</Link><Link className="button" href="/descontos">Descontos</Link><Link className="button" href="/pagamentos">Pagamentos</Link><Link className="button" href="/configuracao">Configuração</Link></nav><h1>{title}</h1>{error&&<div className="alert error" role="alert">{error}</div>}{message&&<div className="alert" role="status">{message}</div>}{children}</main>;
+}

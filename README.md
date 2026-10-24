@@ -1,93 +1,53 @@
 # Contabilidades — Gestão de Clientes
 
-Aplicação privada Next.js + TypeScript para gerir clientes e processos, ligada ao mesmo Supabase que o [Portal IRS](https://github.com/rrodriguescareer/Contabilidades---IRS). O acesso exige um utilizador autenticado e autorização de profissional no banco.
+Aplicação privada Next.js/TypeScript para o contabilista, com módulos IRS, utilizadores, empresas, descontos e pagamentos. Partilha Supabase com o [Portal IRS](https://github.com/rrodriguescareer/Contabilidades---IRS). A Gestão é exclusiva da conta confirmada `contabilidade.rubenrodrigues@gmail.com`, também autorizada em `staff_users`.
 
-## Publicação no Vercel
+## Atualizar a instalação existente
 
-- Importar este repositório, branch `main`, Framework **Next.js**, diretório raiz, Node.js **24**.
-- Build: `npm run build`. O `next start` usa o modo de produção; o Vercel gere o arranque.
-- Configurar as variáveis antes de fazer Redeploy:
+Se já aplicou 001–004, executar **`supabase/upgrade-005-007.sql` completo** no SQL Editor do mesmo projeto Supabase. Preserva os dados existentes e inclui as três novas migrações numa transação. Não repetir a instalação inicial. Se algumas das novas migrações já foram aplicadas individualmente, executar apenas as pendentes.
 
-| Nome | Valor |
-|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | `https://rllajahyovpzndbbyvcd.supabase.co` |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Publishable key do Supabase |
-| `NEXT_PUBLIC_SITE_URL` | URL pública desta aplicação Gestão, com `https://` |
-| `NEXT_PUBLIC_IRS_URL` | URL pública do Portal IRS |
+Para uma base vazia, usar `supabase/install.sql`. Estes ficheiros são gerados a partir das migrações com `npm run db:bundle` e ficam fora da pasta de migrações para não serem aplicados duas vezes pela CLI.
 
-Em alternativa à publishable, pode usar `NEXT_PUBLIC_SUPABASE_ANON_KEY`. O código também aceita `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` e `SUPABASE_ANON_KEY`, usados por algumas integrações. As duas aplicações usam a mesma URL e chave pública, mantendo `NEXT_PUBLIC_SITE_URL` diferente. Não é necessária uma integração automática Vercel/Supabase para cada projeto.
+O [guia de ativação](docs/ativacao.md) explica email RR, conta do contabilista, Vercel, convites, Revolut, preços e conservação de documentos. As configurações e migrações remotas não foram aplicadas por este desenvolvimento, que não tem acesso administrativo ao projeto Supabase/Vercel.
 
-Nunca utilizar `service_role`, secret key ou a password da base de dados no frontend. O código recusa chaves privilegiadas. Sem configuração, o acesso fica indisponível e não são apresentados dados alternativos.
+## Vercel
 
-## Migrações — projeto Supabase partilhado
+Importar `main`, framework **Next.js**, raiz do repositório, Node.js **24**, build `npm run build`. Preencher as variáveis de `.env.example`. As variáveis básicas são:
 
-**Primeira instalação (ainda não existem tabelas da aplicação):** abra [supabase/install.sql](supabase/install.sql), copie o ficheiro completo para Supabase → SQL Editor → New query e execute em **Run**. Este ficheiro inclui as quatro migrações na ordem correta, numa única transação. Não execute a migração 004 isoladamente numa base sem a estrutura inicial. Se surgir `type "public.profiles" does not exist`, falta a instalação inicial nesse projeto Supabase.
+- `NEXT_PUBLIC_SUPABASE_URL=https://rllajahyovpzndbbyvcd.supabase.co`
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (ou `NEXT_PUBLIC_SUPABASE_ANON_KEY`)
+- `NEXT_PUBLIC_SITE_URL`: URL desta Gestão
+- `NEXT_PUBLIC_IRS_URL`: URL do Portal IRS
 
-O instalador interrompe se encontrar tabelas da aplicação já existentes e preserva os dados; nesse caso, identifique as migrações já aplicadas e execute apenas as pendentes. Não apague tabelas para contornar a verificação. Depois de executar o instalador com sucesso, não volte a executar as migrações 001–004.
-
-**Atualização de uma instalação existente:** aplicar apenas as migrações pendentes, pela ordem indicada, através do SQL Editor ou CLI de migrações:
-
-1. `supabase/migrations/202610230001_core.sql`
-2. `supabase/migrations/202610230002_legal_acceptances.sql`
-3. `supabase/migrations/202610230003_production_legal_version.sql`
-4. `supabase/migrations/202610230004_annual_cases.sql`
-
-Se as anteriores já foram aplicadas, executar apenas as pendentes. Não repetir as migrações iniciais nem executar outra cópia no IRS. A versão legal atual é `2026-10-23.2`; o histórico anterior é preservado e não se assume aceitação em nome do cliente.
-
-A primeira migração cria tabelas, RLS, funções e o bucket privado `irs-documents`. As seguintes criam o histórico imutável de aceitação e exigem a versão atual antes de autorizar leituras fiscais do cliente. Não foram aplicadas ao projeto remoto por este desenvolvimento: não estão disponíveis neste ambiente credenciais de administração do Supabase.
-
-## Primeiro profissional
-
-Criar o utilizador em Supabase → Authentication → Users, confirmando o email. Depois executar no SQL Editor, substituindo o email:
-
-```sql
-insert into public.staff_users(user_id)
-select id from auth.users where lower(email) = lower('SEU_EMAIL_PROFISSIONAL')
-on conflict(user_id) do update set active=true;
-```
-
-Confirmar que foi afetada uma linha e entrar pela rota `/entrar`. O registo público de clientes não concede privilégios profissionais.
-
-## URLs de autenticação
-
-Em Supabase → Authentication → URL Configuration:
-
-- Site URL: endereço estável do IRS.
-- Redirect URLs: `https://URL-IRS/auth/callback` e `https://URL-GESTAO/auth/callback`.
-- Cada Vercel precisa do seu `NEXT_PUBLIC_SITE_URL` correto.
-
-Configurar e verificar o envio de emails pelo serviço Auth/SMTP. Partilhar Supabase não partilha automaticamente a sessão entre domínios.
+As duas aplicações usam o mesmo Supabase, com URLs próprias. Não precisam de duas integrações automáticas Vercel/Supabase. A sessão não é partilhada automaticamente entre domínios. As chaves administrativas e Merchant são privadas e nunca usam prefixo `NEXT_PUBLIC_`.
 
 ## Funcionalidades
 
-Aprovação de registos sem duplicar contas em novas tentativas, abertura de conta/processo IRS e titular numa transação, concessão/revogação de módulos, consulta do agregado e rendimentos, documentos privados, mensagens, progresso e alertas de 2FA. Faturas e pagamentos existentes são consultados.
+- Registo IRS e abertura inicial automáticos, sem aprovação manual.
+- Consulta/pesquisa paginada de utilizadores, estados dos convites aceites, bloqueio de acesso e eliminação da autenticação com conservação fiscal.
+- Empresas associadas a um ou vários utilizadores e controlo de acessos por empresa.
+- Processos anuais IRS com agregado, rendimentos, documentos privados, mensagens, progresso e alertas de 2FA.
+- Códigos com restrições combináveis, clientes gratuitos e descontos obrigatórios.
+- Consulta/reconciliação de ordens Revolut, orçamento discriminado e proteção contra confirmações falsas ou repetidas.
+- Documentos originais em Storage privado, com reutilização de bytes idênticos dentro de cada processo.
 
-Em **Clientes e acessos**, os registos pendentes e as contas aprovadas aparecem separadamente. **Abrir um ano de IRS** cria o processo na conta existente ou abre o que já existe nesse ano. Requer conta ativa e exatamente um titular com acesso IRS ativo. Repetir uma aprovação nunca reativa acessos nem abre outro ano. Se houver duplicados anteriores, os dados são preservados e a abertura pede revisão profissional.
+A plataforma operacional Empresas, integração Cegid, cofre de senhas fiscais, OCR e pagamentos de impostos à AT não estão implementados. Os convites confirmam a identidade do familiar, sem conceder acesso aos dados fiscais dos restantes membros. Os dados pessoais ainda não têm snapshots históricos completos por exercício.
 
-Um novo exercício associa apenas o titular e começa sem rendimentos, imóveis, documentos ou mensagens anteriores. No agregado, **Associar uma pessoa já registada** permite confirmar um familiar para esse ano, sem duplicar a pessoa ou alterar o parentesco nos processos anteriores. Não concede acesso de login a esse familiar.
+O envio com remetente RR requer Custom SMTP no Supabase. A cobrança Revolut permanece desativada por configuração até validação da conta Merchant e versão da API. Os fornecedores reais não foram validados neste ambiente; as verificações automáticas usam apenas dados isolados locais e não publicam cenários nem contas fictícias nos portais.
 
-Convites: nesta versão existem pedidos registados, sem envio/aceitação automática nem permissões amplas para familiares. Cofre fiscal, pagamentos, OCR, anexos diretamente no chat, notificações, Realtime e a plataforma Empresas ainda não estão implementados. O portal não emite faturas fiscais nem submete declarações à AT. A senha das Finanças não é recolhida enquanto não existir cofre.
-
-## Operação e verificação
-
-O endereço inicial abre a área autenticada. Os antigos caminhos `/teste` e `/demonstracao` apenas redirecionam para `/entrar`; não há contas fictícias, cenários ou substituição de dados reais. Os ficheiros ficam privados; formatos PDF/JPEG/PNG até 10 MB, assinatura verificada no servidor e links assinados de 60 segundos. Ainda não existe análise antivírus automática.
-
-As alterações de acesso bloqueiam novas leituras e novos links assinados; links já emitidos podem manter-se válidos até expirarem. O titular tem acesso à conta aprovada; a autorização individual de familiares será desenvolvida antes de ativar esses acessos.
-
-Verificar antes de receber dados reais: migrações, conta profissional, registo/confirmação/recuperação, aceitação legal, aprovação IRS, carregamento/download, leitura entre duas contas distintas, revogação, mensagens e progresso. Os dados pessoais ainda não têm snapshots históricos completos por exercício. Configurar retenção e backups de acordo com o serviço.
-
-## Desenvolvimento e qualidade
+## Verificação local
 
 ```sh
 npm ci
-npm run build
 npm run typecheck
+npm run build
 npm run test:config
 npm run test:validation
+npm run test:revolut
 npm run test:db
+npm run test:platform
 npm run test:install
+npm run test:upgrade
 ```
 
-Para desenvolvimento local, preencher `.env.local` a partir de `.env.example` e executar `npm run dev -- --port 3001`. Os testes automáticos usam exclusivamente dados locais isolados e não criam utilizadores ou documentos na plataforma publicada. A validação local não substitui a verificação do projeto Supabase e do deploy Vercel reais.
-
-O ficheiro de instalação é gerado a partir das migrações com `npm run db:bundle`; atualize-o ao adicionar migrações. `npm run test:install` verifica a instalação completa e a preservação de dados quando se tenta repetir a instalação ou existe uma estrutura parcial.
+Para desenvolvimento local: preencher `.env.local` e executar `npm run dev -- --port 3001`. Os antigos caminhos `/teste` e `/demonstracao` apenas redirecionam para `/entrar`.

@@ -1,4 +1,5 @@
 'use server';
+import {createHash} from 'node:crypto';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { session } from './auth';
@@ -62,11 +63,14 @@ export async function uploadDocument(form:FormData){
  else if(bytes[0]===255&&bytes[1]===216&&bytes[2]===255)mime='image/jpeg';
  else if(Buffer.from(bytes.slice(0,8)).equals(Buffer.from([137,80,78,71,13,10,26,10])))mime='image/png';
  if(!mime)failure('O conteúdo do ficheiro não corresponde a PDF, JPEG ou PNG.',c.path);
- const id=crypto.randomUUID(),path=`${c.account}/${c.process}/${id}`;
- const {error:metadata}=await client.from('documents').insert({id,account_id:c.account,case_id:c.process,income_id:income||null,kind,file_name:file.name.slice(0,250),mime_type:mime,file_size:file.size,storage_path:path,uploaded_by:user.id});
- if(metadata)failure('Não foi possível preparar o carregamento. Verifique as permissões e o estado do processo.',c.path);
- const {error:upload}=await client.storage.from('irs-documents').upload(path,bytes,{contentType:mime,upsert:false});
- if(upload)failure('O carregamento falhou. Pode tentar novamente; o ficheiro pendente não fica disponível para download.',c.path);
+ const hash=createHash('sha256').update(bytes).digest('hex');
+ const {data:prepared,error:metadata}=await client.rpc('prepare_irs_document',{account:c.account,process:c.process,record:income||null,doc_kind:kind,original_name:file.name.slice(0,250),mime,size_bytes:file.size,hash});
+ if(metadata||!prepared)failure('Não foi possível preparar o documento. Confirme o estado do processo. Um ficheiro idêntico pode estar pendente ou rejeitado.',c.path);
+ const {id,path,reused}=prepared;
+ if(!reused){
+  const {error:upload}=await client.storage.from('irs-documents').upload(path,bytes,{contentType:mime,upsert:false});
+  if(upload)failure('O carregamento falhou. O envio ficou pendente; contacte o contabilista antes de repetir o mesmo ficheiro.',c.path);
+ }
  const {error:finished}=await client.from('documents').update({state:'uploaded'}).eq('id',id);
  if(finished)failure('O ficheiro foi recebido mas falta confirmar o estado. Contacte o profissional.',c.path);done(c.path,'Documento recebido. O conteúdo fiscal ainda será revisto pelo profissional.');
 }

@@ -8,8 +8,8 @@ const ids={staff:'10000000-0000-4000-8000-000000000001',a:'10000000-0000-4000-80
 test('shared schema, database constraints and tenant isolation',async t=>{
  const db=new PGlite();
  try{
-  await db.exec(`create role anon;create role authenticated;create schema auth;create schema storage;
-  create table auth.users(id uuid primary key,email text,raw_user_meta_data jsonb not null default '{}');
+  await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create schema storage;
+  create table auth.users(id uuid primary key,email text,raw_user_meta_data jsonb not null default '{}',email_confirmed_at timestamptz default now());
   create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
   grant usage on schema auth,storage to authenticated;grant execute on function auth.uid() to authenticated;
   create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
@@ -19,8 +19,11 @@ test('shared schema, database constraints and tenant isolation',async t=>{
   await db.exec(await readFile(new URL('../supabase/migrations/202610230002_legal_acceptances.sql',import.meta.url),'utf8'));
   await db.exec(await readFile(new URL('../supabase/migrations/202610230003_production_legal_version.sql',import.meta.url),'utf8'));
   await db.exec(await readFile(new URL('../supabase/migrations/202610230004_annual_cases.sql',import.meta.url),'utf8'));
-  for(const [name,id]of Object.entries(ids)) await db.query('insert into auth.users(id,email,raw_user_meta_data) values($1,$2,$3)',[id,name+'@example.com',JSON.stringify({terms_accepted:true,terms_version:'2026-10-23.2',privacy_version:'2026-10-23.2',full_name:'Test '+name,birth_date:'1980-01-01',nif:name==='a'?'123456789':name==='b'?'223456789':name==='member'?'323456789':'423456789'})]);
-  await db.query('insert into public.staff_users(user_id) values($1)',[ids.staff]);
+  await db.exec(await readFile(new URL('../supabase/migrations/202610230005_accounts_and_management.sql',import.meta.url),'utf8'));
+  await db.exec(await readFile(new URL('../supabase/migrations/202610230006_checkout.sql',import.meta.url),'utf8'));
+  await db.exec(await readFile(new URL('../supabase/migrations/202610230007_document_deduplication.sql',import.meta.url),'utf8'));
+  for(const [name,id]of Object.entries(ids)) await db.query('insert into auth.users(id,email,raw_user_meta_data) values($1,$2,$3)',[id,(name==='staff'?'contabilidade.rubenrodrigues@gmail.com':name+'@example.com'),JSON.stringify({terms_accepted:true,terms_version:'2026-10-23.3',privacy_version:'2026-10-23.3',full_name:'Test '+name,birth_date:'1980-01-01',nif:name==='a'?'123456789':name==='b'?'223456789':name==='member'?'323456789':'423456789'})]);
+  await db.query('insert into public.staff_users(user_id) values($1) on conflict do nothing',[ids.staff]);
   const actor=async id=>{await db.exec('reset role');await db.query("select set_config('request.jwt.claim.sub',$1,false)",[id]);await db.exec('set role authenticated');};
   await actor(ids.staff);
   const a=(await db.query('select public.approve_client($1,$2,2025) as id',[ids.a,'Account A'])).rows[0].id;
@@ -32,8 +35,8 @@ test('shared schema, database constraints and tenant isolation',async t=>{
   await t.test('acceptance stores server time, current versions and the authenticated user only',async()=>{
    await actor(ids.a);
    let rows=(await db.query('select * from public.legal_acceptances')).rows;
-   assert.equal(rows.length,1);assert.equal(rows[0].user_id,ids.a);assert.equal(rows[0].source,'registration');assert.equal(rows[0].terms_version,'2026-10-23.2');assert.ok(rows[0].accepted_at);
-   await db.query("select public.record_legal_acceptance('2026-10-23.2','2026-10-23.2')");assert.equal((await db.query('select * from public.legal_acceptances')).rows.length,1);
+   assert.equal(rows.length,1);assert.equal(rows[0].user_id,ids.a);assert.equal(rows[0].source,'registration');assert.equal(rows[0].terms_version,'2026-10-23.3');assert.ok(rows[0].accepted_at);
+   await db.query("select public.record_legal_acceptance('2026-10-23.3','2026-10-23.3')");assert.equal((await db.query('select * from public.legal_acceptances')).rows.length,1);
    await assert.rejects(db.query("select public.record_legal_acceptance('2026-10-23.1','2026-10-23.1')"));
    await assert.rejects(db.query('select public.record_legal_acceptance()'));
    await assert.rejects(db.query("update public.legal_acceptances set accepted_at='2000-01-01' where user_id=$1",[ids.a]));
@@ -44,7 +47,7 @@ test('shared schema, database constraints and tenant isolation',async t=>{
    await db.query('insert into auth.users(id,email,raw_user_meta_data) values($1,$2,$3)',[id,'no-consent@example.com',JSON.stringify({full_name:'Pending acceptance',birth_date:'1980-01-01',nif:'623456789'})]);
    await actor(ids.staff);const pending=(await db.query('select public.approve_client($1,$2,2025) as id',[id,'Pending account'])).rows[0].id;
    await actor(id);assert.equal((await db.query('select * from public.legal_acceptances')).rows.length,0);assert.equal((await db.query('select * from public.client_accounts where id=$1',[pending])).rows.length,0);
-   await db.query("select public.record_legal_acceptance('2026-10-23.2','2026-10-23.2')");assert.equal((await db.query('select * from public.client_accounts where id=$1',[pending])).rows.length,1);
+   await db.query("select public.record_legal_acceptance('2026-10-23.3','2026-10-23.3')");assert.equal((await db.query('select * from public.client_accounts where id=$1',[pending])).rows.length,1);
    assert.equal((await db.query('select source from public.legal_acceptances')).rows[0].source,'authenticated_confirmation');
   });
   await t.test('previous legal versions are retained but do not authorize the current portal',async()=>{
@@ -53,13 +56,13 @@ test('shared schema, database constraints and tenant isolation',async t=>{
    await db.query("insert into public.legal_acceptances(user_id,terms_version,privacy_version,source) values($1,'2026-10-23.1','2026-10-23.1','registration')",[id]);
    await actor(ids.staff);const account=(await db.query('select public.approve_client($1,$2,2025) as id',[id,'Versioned account'])).rows[0].id;
    await actor(id);assert.equal((await db.query('select * from public.client_accounts where id=$1',[account])).rows.length,0);
-   await db.query("select public.record_legal_acceptance('2026-10-23.2','2026-10-23.2')");assert.equal((await db.query('select * from public.client_accounts where id=$1',[account])).rows.length,1);
-   assert.deepEqual((await db.query('select terms_version from public.legal_acceptances order by terms_version')).rows.map(r=>r.terms_version),['2026-10-23.1','2026-10-23.2']);
+   await db.query("select public.record_legal_acceptance('2026-10-23.3','2026-10-23.3')");assert.equal((await db.query('select * from public.client_accounts where id=$1',[account])).rows.length,1);
+   assert.deepEqual((await db.query('select terms_version from public.legal_acceptances order by terms_version')).rows.map(r=>r.terms_version),['2026-10-23.1','2026-10-23.3']);
   });
   await t.test('client reads own tenant and cannot self-promote or grant modules',async()=>{
    await actor(ids.a);assert.equal((await db.query('select * from public.client_accounts')).rows.length,1);
    assert.equal((await db.query('select * from public.people where account_id=$1',[b])).rows.length,0);
-   await assert.rejects(db.query('insert into public.staff_users(user_id) values($1)',[ids.a]));
+   await assert.rejects(db.query('insert into public.staff_users(user_id) values($1) on conflict do nothing',[ids.a]));
    assert.equal((await db.query('update public.account_access set business=true where user_id=$1 returning *',[ids.a])).rows.length,0);
    await assert.rejects(db.query('select public.add_case_person($1,$2,$3,$4,$5,$6,$7,true)',[b,cb,'Other','1990-01-01','444444444','conjuge','']));
   });
@@ -97,7 +100,7 @@ test('shared schema, database constraints and tenant isolation',async t=>{
    await actor(ids.b);assert.equal((await db.query('select * from public.documents')).rows.length,0);assert.equal((await db.query('select * from storage.objects')).rows.length,0);
   });
   await t.test('review locks collection; staff progress update is atomic',async()=>{
-   await actor(ids.a);await db.query('select public.submit_case($1,$2)',[a,ca]);
+   await actor(ids.a);await assert.rejects(db.query('select public.submit_case($1,$2)',[a,ca]));await actor(ids.staff);await db.query("update public.irs_cases set status='review' where id=$1",[ca]);await actor(ids.a);
    await assert.rejects(db.query("insert into public.income_records(account_id,case_id,category,person_id,title,mode) values($1,$2,'employment',$3,'Locked','documents')",[a,ca,pa]));
    await db.query('insert into public.messages(account_id,case_id,body) values($1,$2,$3)',[a,ca,'Clarification while under review']);
    await actor(ids.staff);await assert.rejects(db.query('select public.publish_case_progress($1,$2,$3,$4,$5)',[a,ca,'Bad update','Body','invalid']));assert.equal((await db.query('select * from public.progress_events')).rows.length,0);
@@ -149,7 +152,7 @@ test('shared schema, database constraints and tenant isolation',async t=>{
    await assert.rejects(db.query('select public.link_case_person($1,$2,$3,$4)',[a,nextCase,person,'conjuge']));
    assert.equal((await db.query('select count(*) as n from public.case_people where case_id=$1',[nextCase])).rows[0].n,2);
    assert.equal((await db.query('select relationship from public.case_people where case_id=$1 and person_id=$2',[ca,person])).rows[0].relationship,'conjuge');
-   await db.query('select public.submit_case($1,$2)',[a,nextCase]);
+   await assert.rejects(db.query('select public.submit_case($1,$2)',[a,nextCase]));await actor(ids.staff);await db.query("update public.irs_cases set status='review' where id=$1",[nextCase]);await actor(ids.a);
    await assert.rejects(db.query('select public.link_case_person($1,$2,$3,$4)',[a,nextCase,person,'outro']));
   });
   await t.test('suspension and revoked IRS grants cannot be undone by an approval retry',async()=>{

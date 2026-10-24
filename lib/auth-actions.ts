@@ -14,6 +14,9 @@ export async function signIn(form: FormData) {
     const {data,error: denied}=await client.rpc('is_staff');
     if (denied || !data) {await client.auth.signOut();error('Não foi possível autorizar o acesso à gestão. Contacte o responsável.');}
   }
+  const {data:{user:signedUser}}=await client.auth.getUser();
+  const {data:profile}=await client.from('profiles').select('disabled_at,deleted_at').eq('id',signedUser?.id||'').maybeSingle();
+  if(profile?.disabled_at||profile?.deleted_at){await client.auth.signOut();error('Acesso bloqueado. Contacte o contabilista.');}
   redirect('/app');
 }
 export async function signUp(form: FormData) {
@@ -28,6 +31,7 @@ export async function signUp(form: FormData) {
 }
 export async function signOut() { const client=await supabase();await client.auth.signOut();redirect('/entrar'); }
 export async function recover(form: FormData) {
+  if(process.env.AUTH_EMAIL_BRANDING_READY!=='true')error('A recuperação por email está temporariamente indisponível. Contacte o responsável.','/recuperar');
   const origin=siteUrl();if (!origin) error('Falta configurar o endereço público da aplicação.','/recuperar');
   const client=await supabase();
   await client.auth.resetPasswordForEmail(text(form,'email'),{redirectTo:`${origin}/auth/callback?next=/nova-password`});

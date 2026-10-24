@@ -5,3 +5,7 @@
 .sidebar,.sidebar nav{min-width:0}
 @media(max-width:850px){.app-shell{grid-template-columns:minmax(0,1fr)}}
 .legal-layout{width:min(calc(100% - 40px),940px);margin:40px auto}.legal-nav{display:flex;gap:12px 20px;flex-wrap:wrap;font-size:12px}
+
+.standalone{max-width:1100px;margin:auto;padding:clamp(20px,4vw,48px)}.standalone>h1{margin-top:28px}.price-lines{list-style:none;padding:0}.price-lines li{display:flex;justify-content:space-between;gap:24px;border-bottom:1px solid var(--line);padding:12px 0}.price-total{display:flex;justify-content:space-between;font-size:22px;font-weight:700;gap:20px}.danger{color:#a43224!important;border-color:#dbb4ae!important}.management .module-links{display:flex;gap:10px;flex-wrap:wrap}.invite-result{overflow-wrap:anywhere;margin:12px 0}
+
+.module-links{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.management .sidebar-bottom a{color:#b4dbc9}.sidebar-bottom>a{display:block;margin-bottom:14px}.record>div{min-width:0;overflow-wrap:anywhere}

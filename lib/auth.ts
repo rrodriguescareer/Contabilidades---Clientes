@@ -7,6 +7,9 @@ export async function identity() {
   const client = await supabase();
   const { data: { user } } = await client.auth.getUser();
   if (!user) redirect('/entrar');
+  const {data:profile,error:profileError}=await client.from('profiles').select('disabled_at,deleted_at').eq('id',user.id).single();
+  if(profileError||!profile)redirect('/entrar?erro=Serviço%20temporariamente%20indisponível.');
+  if(profile.disabled_at||profile.deleted_at)redirect('/entrar?erro=Acesso%20bloqueado.%20Contacte%20o%20contabilista.');
   return { client, user };
 }
 export async function session() {

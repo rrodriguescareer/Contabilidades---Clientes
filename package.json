@@ -11,7 +11,10 @@
     "test:config": "node --test tests/config.test.mjs",
     "test:validation": "node --test tests/validation.test.mjs",
     "db:bundle": "node scripts/build-install.mjs",
-    "test:install": "node --test tests/install.test.mjs"
+    "test:install": "node --test tests/install.test.mjs",
+    "test:platform": "node --test tests/platform.test.mjs",
+    "test:revolut": "node --test tests/revolut.test.mjs",
+    "test:upgrade": "node --test tests/upgrade.test.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.7",
