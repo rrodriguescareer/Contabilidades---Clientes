@@ -1,23 +1,230 @@
-import {ownerSession as session} from '@/lib/auth';
-import ManagementShell from '@/components/management-shell';
-import {Submit} from '@/components/forms';
-import {blockUser,deleteUser,setBilling,setAccountant,inviteManagedUser} from '@/lib/management-actions';
-import {adminConfigured} from '@/lib/admin-client';
 import Link from 'next/link';
-export const dynamic='force-dynamic';
-export default async function Users({searchParams}:{searchParams:Promise<{q?:string;pagina?:string;erro?:string;mensagem?:string}>}){
- const {client,user}=await session();const params=await searchParams,page=Math.max(0,Math.min(100000,Number.parseInt(params.pagina||'0',10)||0));
- const search=(params.q||'').trim().slice(0,200),literal=search.replace(/[\\%_]/g,'\\$&');
- let query=client.from('profiles').select('id,email,full_name,nif,birth_date,phone,street,postal_code,locality,disabled_at,deleted_at,onboarding_completed_at,irs_free,forced_discount_id',{count:'exact'}).order('created_at',{ascending:false}).range(page*50,page*50+49);
- if(search)query=query.ilike(search.includes('@')?'email':'full_name',`%${literal}%`);
- const [{data:users,count,error},{data:discounts}]=await Promise.all([
- query,client.from('discount_codes').select('id,code,active').order('code'),
- ]);
- const {data:staff}=await client.from('staff_users').select('user_id,active,managed_by');
- const ids=users?.map(u=>u.id)||[];
- const {data:invitations,error:invitationError}=ids.length?await client.from('household_invitations').select('id,email,accepted_by,accepted_at').in('accepted_by',ids):{data:[],error:null};
- return <ManagementShell title="Utilizadores" error={params.erro} message={params.mensagem}><section className="panel"><h2>Criar acesso por convite</h2><form action={inviteManagedUser}><div className="field-grid"><label>Email<input name="email" type="email" required maxLength={254}/></label><label>Perfil<select name="role"><option value="client">Cliente — associar empresas após criar</option><option value="accountant">Contabilista certificado</option></select></label></div><Submit>Enviar convite de acesso</Submit></form></section><section className="panel"><form method="get"><label>Pesquisar por nome ou email<input name="q" defaultValue={search} maxLength={200}/></label><button>Pesquisar</button></form><p>{count??0} utilizadores · página {page+1}</p>
- {error||invitationError?<div className="alert error">Não foi possível carregar os utilizadores ou os convites.</div>:users?.map(p=><details key={p.id}><summary>{p.full_name} · {p.email||'Conta eliminada'} · {p.deleted_at?'Eliminado':p.disabled_at?'Bloqueado':p.onboarding_completed_at?'Dados completos':'Registo por completar'}</summary><p className="fine">NIF: {p.nif||'Por preencher'} · {p.phone||'Sem telemóvel'}<br/>{[p.street,p.postal_code,p.locality].filter(Boolean).join(' · ')}</p>{invitations?.filter(i=>i.accepted_by===p.id).map(i=><p key={i.id} className="fine">Convite aceite com {i.email} em {new Date(i.accepted_at).toLocaleDateString('pt-PT')}</p>)}
- {p.id!==user.id&&!p.deleted_at&&<><form action={setAccountant}><input name="user" type="hidden" value={p.id}/><input name="enabled" type="hidden" value={staff?.some(s=>s.user_id===p.id&&s.active&&s.managed_by)?'false':'true'}/><p>Perfil: {staff?.some(s=>s.user_id===p.id&&s.active&&s.managed_by)?'Contabilista certificado':'Cliente'}</p><Submit>{staff?.some(s=>s.user_id===p.id&&s.active&&s.managed_by)?'Remover acesso de contabilista':'Dar acesso de contabilista'}</Submit></form><form action={blockUser}><input name="user" type="hidden" value={p.id}/><input name="blocked" type="hidden" value={p.disabled_at?'false':'true'}/><Submit>{p.disabled_at?'Remover bloqueio':'Bloquear utilizador'}</Submit></form><form action={setBilling}><input name="user" type="hidden" value={p.id}/><label className="check"><input name="free" type="checkbox" defaultChecked={p.irs_free}/>Cliente gratuito — IRS sem cobrança</label><label>Código obrigatório<select name="discount" defaultValue={p.forced_discount_id||''}><option value="">Sem desconto obrigatório</option>{discounts?.map(d=><option key={d.id} value={d.id}>{d.code}{d.active?'':' (inativo)'}</option>)}</select></label><Submit>Guardar condições de preço</Submit></form><details><summary className="danger">Eliminar utilizador</summary><p>A autenticação será eliminada e o acesso bloqueado. Documentos fiscais e financeiros sujeitos a conservação serão preservados.</p><form action={deleteUser}><input name="user" type="hidden" value={p.id}/><label>Escreva o email para confirmar<input name="confirmation" type="email" autoComplete="off" required/></label><button className="danger" disabled={!adminConfigured()}>Eliminar utilizador</button>{!adminConfigured()&&<p className="fine">A eliminação da autenticação necessita da configuração administrativa indicada em Configuração.</p>}</form></details></>}
- </details>)}</section><div className="module-links">{page>0&&<Link className="button" href={`/utilizadores?pagina=${page-1}&q=${encodeURIComponent(search)}`}>← Anterior</Link>}{(page+1)*50<(count||0)&&<Link className="button" href={`/utilizadores?pagina=${page+1}&q=${encodeURIComponent(search)}`}>Seguinte →</Link>}</div></ManagementShell>;
+import { ownerSession as session } from '@/lib/auth';
+import { Avisos, Secao } from '@/components/consola';
+import { Submeter } from '@/components/forms';
+import { blockUser, deleteUser, setBilling, setAccountant, inviteManagedUser } from '@/lib/management-actions';
+import { adminConfigured } from '@/lib/admin-client';
+import { data as formatarData } from '@/lib/apresentar';
+import e from '@/components/consola.module.css';
+
+export const dynamic = 'force-dynamic';
+export const metadata = { title: 'Utilizadores' };
+
+const POR_PAGINA = 50;
+
+export default async function Utilizadores({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; pagina?: string; erro?: string; mensagem?: string }>;
+}) {
+  const { client, user } = await session();
+  const parametros = await searchParams;
+
+  const pagina = Math.max(0, Math.min(100000, Number.parseInt(parametros.pagina || '0', 10) || 0));
+  const procura = (parametros.q || '').trim().slice(0, 200);
+  // O ilike trata % e _ como curingas: escapá-los evita pesquisas acidentais amplas.
+  const literal = procura.replace(/[\\%_]/g, '\\$&');
+
+  let consulta = client
+    .from('profiles')
+    .select(
+      'id,email,full_name,nif,birth_date,phone,street,postal_code,locality,disabled_at,deleted_at,onboarding_completed_at,irs_free,forced_discount_id',
+      { count: 'exact' },
+    )
+    .order('created_at', { ascending: false })
+    .range(pagina * POR_PAGINA, pagina * POR_PAGINA + POR_PAGINA - 1);
+  if (procura) consulta = consulta.ilike(procura.includes('@') ? 'email' : 'full_name', `%${literal}%`);
+
+  const [{ data: utilizadores, count, error }, { data: descontos }, { data: equipa }] = await Promise.all([
+    consulta,
+    client.from('discount_codes').select('id,code,active').order('code'),
+    client.from('staff_users').select('user_id,active,managed_by'),
+  ]);
+
+  const ids = utilizadores?.map((perfil) => perfil.id) ?? [];
+  const { data: convites } = ids.length
+    ? await client.from('household_invitations').select('id,email,accepted_by,accepted_at').in('accepted_by', ids)
+    : { data: [] };
+
+  const eContabilista = (id: string) =>
+    Boolean(equipa?.some((membro) => membro.user_id === id && membro.active && membro.managed_by));
+
+  const total = count ?? 0;
+  const ligacao = (destino: number) => `/utilizadores?pagina=${destino}&q=${encodeURIComponent(procura)}`;
+
+  return (
+    <>
+      <Avisos erro={parametros.erro} mensagem={parametros.mensagem} />
+
+      <Secao titulo="Criar acesso por convite" nota="O convite cria a conta; as empresas associam-se depois.">
+        <form action={inviteManagedUser} className="cartao pilha pilha-4">
+          <div className="grelha grelha-auto">
+            <label className="campo">
+              <span>Email</span>
+              <input name="email" type="email" className="entrada" required maxLength={254} />
+            </label>
+            <label className="campo">
+              <span>Perfil</span>
+              <select name="role" className="entrada">
+                <option value="client">Cliente</option>
+                <option value="accountant">Contabilista certificado</option>
+              </select>
+            </label>
+          </div>
+          <Submeter className="btn" aDecorrer="A enviar…">
+            Enviar convite de acesso
+          </Submeter>
+        </form>
+      </Secao>
+
+      <Secao titulo="Registados" nota={`${total} ${total === 1 ? 'utilizador' : 'utilizadores'} · página ${pagina + 1}`}>
+        <form method="get" className="linha" style={{ alignItems: 'flex-end' }}>
+          <label className="campo cresce" style={{ maxWidth: '26rem' }}>
+            <span>Pesquisar por nome ou email</span>
+            <input name="q" className="entrada" defaultValue={procura} maxLength={200} />
+          </label>
+          <button className="btn btn-secundario">Pesquisar</button>
+        </form>
+
+        {error ? (
+          <p className="aviso aviso-critico">Não foi possível carregar os utilizadores.</p>
+        ) : !utilizadores?.length ? (
+          <div className="vazio">
+            <strong>Nada encontrado</strong>
+            <p>{procura ? 'Nenhum utilizador corresponde a esta pesquisa.' : 'Ainda não há utilizadores registados.'}</p>
+          </div>
+        ) : (
+          <div>
+            {utilizadores.map((perfil) => {
+              const contabilista = eContabilista(perfil.id);
+              const estado = perfil.deleted_at
+                ? { rotulo: 'Eliminado', classe: 'etiqueta-critico' }
+                : perfil.disabled_at
+                  ? { rotulo: 'Bloqueado', classe: 'etiqueta-critico' }
+                  : perfil.onboarding_completed_at
+                    ? { rotulo: 'Dados completos', classe: 'etiqueta-positivo' }
+                    : { rotulo: 'Registo por completar', classe: 'etiqueta-atencao' };
+
+              return (
+                <details className={e.ficha} key={perfil.id}>
+                  <summary className={e.fichaResumo}>
+                    <span className={e.fichaNome}>{perfil.full_name}</span>
+                    <span className={e.fichaEmail}>{perfil.email || 'Conta eliminada'}</span>
+                    <span className={e.fichaEtiquetas}>
+                      {contabilista && <span className="etiqueta etiqueta-acao">Contabilista</span>}
+                      {perfil.irs_free && <span className="etiqueta">IRS gratuito</span>}
+                      <span className={`etiqueta ${estado.classe}`}>{estado.rotulo}</span>
+                    </span>
+                  </summary>
+
+                  <div className={e.fichaCorpo}>
+                    <p className="pequeno suave">
+                      NIF {perfil.nif || 'por preencher'} · {perfil.phone || 'sem telemóvel'} ·{' '}
+                      {perfil.birth_date ? formatarData(perfil.birth_date) : 'sem data de nascimento'}
+                      <br />
+                      {[perfil.street, perfil.postal_code, perfil.locality].filter(Boolean).join(', ') || 'Sem morada'}
+                    </p>
+
+                    {convites
+                      ?.filter((convite) => convite.accepted_by === perfil.id)
+                      .map((convite) => (
+                        <p className="micro tenue" key={convite.id}>
+                          Convite aceite com {convite.email} em {formatarData(convite.accepted_at)}
+                        </p>
+                      ))}
+
+                    {perfil.id !== user.id && !perfil.deleted_at && (
+                      <div className={e.fichaCaixas}>
+                        <div className={e.fichaCaixa}>
+                          <h3>Perfil e acesso</h3>
+                          <form action={setAccountant} className="pilha pilha-2">
+                            <input name="user" type="hidden" value={perfil.id} />
+                            <input name="enabled" type="hidden" value={contabilista ? 'false' : 'true'} />
+                            <Submeter className="btn btn-secundario btn-sm" aDecorrer="…">
+                              {contabilista ? 'Remover acesso de contabilista' : 'Dar acesso de contabilista'}
+                            </Submeter>
+                          </form>
+                          <form action={blockUser}>
+                            <input name="user" type="hidden" value={perfil.id} />
+                            <input name="blocked" type="hidden" value={perfil.disabled_at ? 'false' : 'true'} />
+                            <Submeter className="btn btn-secundario btn-sm" aDecorrer="…">
+                              {perfil.disabled_at ? 'Remover bloqueio' : 'Bloquear utilizador'}
+                            </Submeter>
+                          </form>
+                        </div>
+
+                        <div className={e.fichaCaixa}>
+                          <h3>Condições de preço</h3>
+                          <form action={setBilling} className="pilha pilha-3">
+                            <input name="user" type="hidden" value={perfil.id} />
+                            <label className="caixa">
+                              <input name="free" type="checkbox" defaultChecked={perfil.irs_free} />
+                              <span className="pequeno">Cliente gratuito — IRS sem cobrança.</span>
+                            </label>
+                            <label className="campo">
+                              <span>Código obrigatório</span>
+                              <select name="discount" className="entrada" defaultValue={perfil.forced_discount_id || ''}>
+                                <option value="">Sem desconto obrigatório</option>
+                                {descontos?.map((desconto) => (
+                                  <option key={desconto.id} value={desconto.id}>
+                                    {desconto.code}
+                                    {desconto.active ? '' : ' (inativo)'}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <Submeter className="btn btn-secundario btn-sm" aDecorrer="A guardar…">
+                              Guardar condições
+                            </Submeter>
+                          </form>
+                        </div>
+
+                        <div className={`${e.fichaCaixa} ${e.perigo}`}>
+                          <h3>Eliminar utilizador</h3>
+                          <p className="pequeno">
+                            A autenticação é eliminada e o acesso bloqueado. Os documentos fiscais e financeiros
+                            sujeitos a conservação legal são preservados.
+                          </p>
+                          <form action={deleteUser} className="pilha pilha-3">
+                            <input name="user" type="hidden" value={perfil.id} />
+                            <label className="campo">
+                              <span>Escreva o email para confirmar</span>
+                              <input name="confirmation" type="email" className="entrada" autoComplete="off" required />
+                            </label>
+                            <button className="btn btn-critico btn-sm" disabled={!adminConfigured()}>
+                              Eliminar utilizador
+                            </button>
+                            {!adminConfigured() && (
+                              <p className="micro">
+                                A eliminação precisa da configuração administrativa indicada em Configurações.
+                              </p>
+                            )}
+                          </form>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </details>
+              );
+            })}
+          </div>
+        )}
+
+        {(pagina > 0 || (pagina + 1) * POR_PAGINA < total) && (
+          <div className="linha">
+            {pagina > 0 && (
+              <Link className="btn btn-secundario btn-sm" href={ligacao(pagina - 1)}>
+                ← Anterior
+              </Link>
+            )}
+            {(pagina + 1) * POR_PAGINA < total && (
+              <Link className="btn btn-secundario btn-sm" href={ligacao(pagina + 1)}>
+                Seguinte →
+              </Link>
+            )}
+          </div>
+        )}
+      </Secao>
+    </>
+  );
 }

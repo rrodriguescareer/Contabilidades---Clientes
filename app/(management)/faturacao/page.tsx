@@ -1,8 +1,78 @@
-import {ownerSession} from '@/lib/auth';
-import ManagementShell from '@/components/management-shell';
-export default async function Billing(){
- const {client}=await ownerSession();
- const {data,error}=await client.from('invoices').select('id,reference,issued_at,total,currency,account_id,client:client_accounts(name),payments(amount)').order('issued_at',{ascending:false}).limit(100);
- const money=(v:number)=>new Intl.NumberFormat('pt-PT',{style:'currency',currency:'EUR'}).format(v);
- return <ManagementShell title="Faturação"><div className="alert">Consulte as faturas associadas às contas IRS. A emissão automática no Cegid e a faturação da plataforma Empresas serão ligadas quando essas integrações estiverem disponíveis.</div><section className="panel"><h2>Últimas faturas</h2>{error?<p>Não foi possível carregar as faturas.</p>:!data?.length?<p>Ainda não foram registadas faturas.</p>:data.map(row=>{const paid=(row.payments as {amount:number|string}[]).reduce((total,p)=>total+Number(p.amount),0);return <article className="record" key={row.id}><div><span className="badge">IRS</span><h3>{row.reference}</h3><p>{(row.client as unknown as {name:string})?.name} · {new Date(row.issued_at).toLocaleDateString('pt-PT')}</p></div><div><strong>{money(Number(row.total))}</strong><p>{paid>=Number(row.total)?'Pago':'Por liquidar'} · Recebido {money(paid)}</p></div></article>;})}</section></ManagementShell>;
+import { ownerSession } from '@/lib/auth';
+import { Secao } from '@/components/consola';
+import { data as formatarData } from '@/lib/apresentar';
+
+export const dynamic = 'force-dynamic';
+export const metadata = { title: 'Faturação' };
+
+const EUROS = new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' });
+
+export default async function Faturacao() {
+  const { client } = await ownerSession();
+
+  const { data: faturas, error } = await client
+    .from('invoices')
+    .select('id,reference,issued_at,total,currency,account_id,client:client_accounts(name),payments(amount)')
+    .order('issued_at', { ascending: false })
+    .limit(100);
+
+  return (
+    <>
+      <p className="aviso">
+        Faturas associadas às contas de IRS. A emissão automática no Cegid e a faturação da plataforma Empresas
+        ligam-se quando essas integrações estiverem disponíveis.
+      </p>
+
+      <Secao titulo="Últimas faturas">
+        {error ? (
+          <p className="aviso aviso-critico">Não foi possível carregar as faturas.</p>
+        ) : !faturas?.length ? (
+          <div className="vazio">
+            <strong>Sem faturas</strong>
+            <p>Ainda não foram registadas faturas nesta campanha.</p>
+          </div>
+        ) : (
+          <div className="tabela-envolve">
+            <table className="tabela">
+              <thead>
+                <tr>
+                  <th>Referência</th>
+                  <th>Cliente</th>
+                  <th>Emitida</th>
+                  <th>Total</th>
+                  <th>Recebido</th>
+                  <th>Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {faturas.map((fatura) => {
+                  const recebido = ((fatura.payments ?? []) as { amount: number | string }[]).reduce(
+                    (soma, pagamento) => soma + Number(pagamento.amount),
+                    0,
+                  );
+                  const liquidada = recebido >= Number(fatura.total);
+                  return (
+                    <tr key={fatura.id}>
+                      <td>
+                        <strong>{fatura.reference}</strong>
+                      </td>
+                      <td>{(fatura.client as unknown as { name: string } | null)?.name ?? '—'}</td>
+                      <td className="pequeno suave">{formatarData(fatura.issued_at)}</td>
+                      <td className="numero">{EUROS.format(Number(fatura.total))}</td>
+                      <td className="numero">{EUROS.format(recebido)}</td>
+                      <td>
+                        <span className={`etiqueta ${liquidada ? 'etiqueta-positivo' : 'etiqueta-atencao'}`}>
+                          {liquidada ? 'Paga' : 'Por liquidar'}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Secao>
+    </>
+  );
 }

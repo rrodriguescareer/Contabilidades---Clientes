@@ -1,4 +1,25 @@
-import { AuthShell } from '@/lib/auth-view';
+import { Submeter } from '@/components/forms';
+import { EcraAutenticacao } from '@/lib/auth-view';
 import { changePassword } from '@/lib/auth-actions';
-export const dynamic='force-dynamic';
-export default async function NewPassword({searchParams}:{searchParams:Promise<{erro?:string}>}){const {erro}=await searchParams;return <AuthShell title="Nova palavra-passe" description="Utilize a ligação de recuperação recebida por email." error={erro}><form action={changePassword}><label>Nova palavra-passe<input type="password" name="password" autoComplete="new-password" minLength={12} maxLength={128} required/></label><button className="primary">Guardar palavra-passe</button></form></AuthShell>;}
+
+export const dynamic = 'force-dynamic';
+export const metadata = { title: 'Nova palavra-passe' };
+
+export default async function NovaPalavraPasse({ searchParams }: { searchParams: Promise<{ erro?: string }> }) {
+  const { erro } = await searchParams;
+  return (
+    <EcraAutenticacao titulo="Defina a nova palavra-passe." descricao="Escolha uma que não use em mais lado nenhum." erro={erro}>
+      <form action={changePassword}>
+        <label className="campo">
+          <span>Nova palavra-passe</span>
+          <input name="password" type="password" className="entrada" autoComplete="new-password" minLength={12} maxLength={128} required />
+        </label>
+        <label className="campo">
+          <span>Confirmar</span>
+          <input name="confirmation" type="password" className="entrada" autoComplete="new-password" minLength={12} maxLength={128} required />
+        </label>
+        <Submeter>Guardar palavra-passe</Submeter>
+      </form>
+    </EcraAutenticacao>
+  );
+}

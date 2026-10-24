@@ -1,7 +1,75 @@
 import Link from 'next/link';
-import { APP_TITLE,IS_MANAGEMENT } from './app';
 import { configuration } from './supabase';
-export function AuthShell({children,title,description,message,error}:{children:React.ReactNode;title:string;description:string;message?:string;error?:string}){
- const ready=Boolean(configuration());
- return <main id="main" className="auth-layout"><section className="auth-brand"><img src="/rr-logo.svg" alt="RR." width="86" height="48"/><div><span className="eyebrow">{IS_MANAGEMENT?'O SEU ESPAÇO DE TRABALHO':'CONTABILIDADE COM PROXIMIDADE'}</span><h1>{IS_MANAGEMENT?'Os seus clientes. Uma visão central.':'O seu IRS, acompanhado de perto.'}</h1><p>{IS_MANAGEMENT?'Organize os acessos, acompanhe os processos e mantenha a comunicação com cada cliente.':'Reúna os elementos do agregado, organize os documentos e fale com o seu contabilista.'}</p></div><small>{APP_TITLE} · Acesso privado</small></section><section className="auth-content"><div className="auth-card"><span className="eyebrow">{APP_TITLE}</span><h2>{title}</h2><p>{description}</p>{error&&<div className="alert error" role="alert">{error}</div>}{message&&<div className="alert" role="status">{message}</div>}{ready?children:<div className="alert" role="alert"><strong>Serviço temporariamente indisponível</strong><p>{IS_MANAGEMENT?'A Gestão ainda não tem uma ligação válida ao Supabase. No Vercel desta aplicação, configure a URL e a chave pública do mesmo projeto usado pelo IRS e faça Redeploy.':'Não foi possível disponibilizar o acesso. Tente novamente mais tarde ou contacte o seu contabilista.'}</p><a href="mailto:contabilidade.rubenrodrigues@gmail.com">Contactar por email</a></div>}<p className="auth-foot">Rúben Meirinho Rodrigues · Contabilista Certificado</p><div className="legal-nav"><Link href="/entrar" className="quiet">Entrada da plataforma</Link>{!IS_MANAGEMENT&&<><Link href="/termos" className="quiet">Termos e Condições</Link><Link href="/privacidade" className="quiet">Privacidade</Link></>}</div></div></section></main>;
+import a from './auth-view.module.css';
+
+type Props = {
+  children: React.ReactNode;
+  titulo: string;
+  descricao: string;
+  mensagem?: string;
+  erro?: string;
+  /** Ligações por baixo do formulário. */
+  rodape?: React.ReactNode;
+};
+
+/* Ecrã partilhado por entrar, registar, recuperar e definir palavra-passe.
+   À esquerda a marca, à direita o formulário; no telemóvel só o formulário. */
+export function EcraAutenticacao({ children, titulo, descricao, mensagem, erro, rodape }: Props) {
+  const pronto = Boolean(configuration());
+
+  return (
+    <main id="principal" className={a.ecra}>
+      <section className={a.marca} aria-hidden="true">
+        <img src="/rr-branco.svg" alt="" width={294} height={195} />
+        <div className={a.marcaTexto}>
+          <h2>Os seus clientes, num só lugar.</h2>
+          <p>
+            Acessos, empresas, credenciais, descontos e pagamentos. O acompanhamento dos processos de IRS vive na
+            plataforma do IRS, no espaço do contabilista.
+          </p>
+        </div>
+        <small>Rúben Meirinho Rodrigues · Contabilista Certificado n.º 145854</small>
+      </section>
+
+      <section className={a.coluna}>
+        <div className={a.cartao}>
+          <Link href="/" className={a.logo}>
+            <img src="/rr.svg" alt="RR." width={294} height={195} />
+          </Link>
+
+          <div className="pilha pilha-2">
+            <h1>{titulo}</h1>
+            <p className="suave">{descricao}</p>
+          </div>
+
+          {erro && (
+            <p className="aviso aviso-critico" role="alert">
+              {erro}
+            </p>
+          )}
+          {mensagem && (
+            <p className="aviso aviso-positivo" role="status">
+              {mensagem}
+            </p>
+          )}
+
+          {pronto ? (
+            children
+          ) : (
+            <div className="aviso aviso-critico pilha pilha-2" role="alert">
+              <strong>Serviço temporariamente indisponível</strong>
+              <p>Não foi possível estabelecer ligação. Tente mais tarde ou contacte-me por email.</p>
+              <a href="mailto:contabilidade.rubenrodrigues@gmail.com">contabilidade.rubenrodrigues@gmail.com</a>
+            </div>
+          )}
+
+          {rodape && <div className={a.ligacoes}>{rodape}</div>}
+
+          <div className={a.legal}>
+            <span>Acesso restrito · Rúben Meirinho Rodrigues</span>
+          </div>
+        </div>
+      </section>
+    </main>
+  );
 }

@@ -1,0 +1,97 @@
+/* Consola de administração. Barra lateral permanente e conteúdo denso —
+   de propósito diferente do portal do cliente, que é guiado e centrado. */
+
+.consola {
+  min-block-size: 100dvh;
+  display: grid;
+  grid-template-columns: 16.5rem 1fr;
+}
+@media (max-width: 1000px) { .consola { grid-template-columns: 1fr; } }
+
+/* ---------------- Barra lateral ---------------- */
+.lateral {
+  background: var(--tinta-900); color: #fff;
+  display: grid; grid-template-rows: auto auto 1fr auto; gap: var(--e-5);
+  padding: var(--e-5) var(--e-4);
+  padding-block-start: calc(var(--e-5) + env(safe-area-inset-top));
+  position: sticky; inset-block-start: 0; block-size: 100dvh; overflow-y: auto;
+}
+@media (max-width: 1000px) {
+  .lateral { position: static; block-size: auto; grid-template-rows: none; gap: var(--e-4); }
+}
+.marca { display: flex; align-items: center; gap: var(--e-3); text-decoration: none; }
+.marca img { height: 24px; width: auto; }
+.marcaTexto { display: grid; gap: .0625rem; }
+.marcaTexto strong { font-size: var(--t-sm); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.marcaTexto span { font-size: var(--t-xs); color: rgb(234 241 252 / .52); }
+
+.papel {
+  font-size: var(--t-xs); font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--acao); padding: .375rem .625rem; border-radius: var(--r-sm);
+  background: rgb(40 103 248 / .14); width: fit-content;
+}
+
+.navegacao { display: grid; gap: .125rem; align-content: start; }
+.navGrupo {
+  font-size: var(--t-xs); font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  color: rgb(234 241 252 / .38); padding: var(--e-4) .625rem var(--e-2);
+}
+.navLink {
+  display: flex; align-items: center; gap: var(--e-3);
+  padding: .5rem .625rem; border-radius: var(--r-sm);
+  font-size: var(--t-base); font-weight: 550; text-decoration: none;
+  color: rgb(234 241 252 / .76);
+  transition: background var(--rapido) var(--curva), color var(--rapido) var(--curva);
+}
+.navLink:hover { background: rgb(255 255 255 / .07); color: #fff; }
+.navLink[aria-current='page'] { background: var(--acao); color: #fff; font-weight: 650; }
+.navNumero {
+  font-size: .625rem; font-weight: 750; font-variant-numeric: tabular-nums;
+  color: rgb(234 241 252 / .4); min-inline-size: 1.25rem;
+}
+.navLink[aria-current='page'] .navNumero { color: rgb(255 255 255 / .65); }
+.navExterno { margin-block-start: auto; }
+
+.rodapeLateral {
+  display: grid; gap: var(--e-2); font-size: var(--t-xs);
+  color: rgb(234 241 252 / .5);
+  border-block-start: 1px solid rgb(255 255 255 / .1); padding-block-start: var(--e-4);
+}
+.rodapeLateral button { color: inherit; text-decoration: underline; text-align: start; font-size: inherit; }
+.rodapeLateral button:hover { color: #fff; }
+
+/* ---------------- Conteúdo ---------------- */
+.corpo { display: grid; grid-template-rows: auto 1fr; min-width: 0; background: var(--fundo); }
+.topo {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--e-4);
+  padding: var(--e-4) var(--gutter); border-block-end: 1px solid var(--linha);
+  background: var(--superficie); position: sticky; inset-block-start: 0; z-index: 30;
+}
+.topoTitulo { display: grid; gap: .0625rem; min-width: 0; }
+.topoTitulo span { font-size: var(--t-xs); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--texto-ténue); }
+.topoTitulo h1 { font-size: var(--t-xl); }
+.conteudo { padding: var(--e-5) var(--gutter) var(--e-8); display: grid; gap: var(--e-5); align-content: start; min-width: 0; }
+
+.secao { display: grid; gap: var(--e-4); }
+.secaoTitulo { display: flex; align-items: baseline; justify-content: space-between; gap: var(--e-3); flex-wrap: wrap; }
+.secaoTitulo h2 { font-size: var(--t-lg); }
+.secaoTitulo p { font-size: var(--t-sm); color: var(--texto-suave); }
+
+/* ---------------- Fichas expansíveis ---------------- */
+.ficha { background: var(--superficie); border: 1px solid var(--linha); border-radius: var(--r-md); overflow: hidden; }
+.ficha + .ficha { margin-block-start: var(--e-2); }
+.fichaResumo {
+  display: flex; align-items: center; gap: var(--e-3) var(--e-4); flex-wrap: wrap;
+  padding: var(--e-4); cursor: pointer; list-style: none;
+}
+.fichaResumo::-webkit-details-marker { display: none; }
+.fichaResumo:hover { background: var(--superficie-2); }
+.fichaNome { font-weight: 650; }
+.fichaEmail { font-size: var(--t-sm); color: var(--texto-suave); }
+.fichaEtiquetas { margin-inline-start: auto; display: flex; gap: var(--e-2); flex-wrap: wrap; }
+.fichaCorpo { padding: 0 var(--e-4) var(--e-4); display: grid; gap: var(--e-4); border-block-start: 1px solid var(--linha); padding-block-start: var(--e-4); }
+.fichaCaixas { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(17rem, 100%), 1fr)); gap: var(--e-4); align-items: start; }
+.fichaCaixa { display: grid; gap: var(--e-3); padding: var(--e-4); border: 1px solid var(--linha); border-radius: var(--r-sm); background: var(--superficie-2); }
+.fichaCaixa h3 { font-size: var(--t-xs); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--texto-ténue); }
+.perigo { border-color: color-mix(in srgb, var(--critico) 32%, transparent); background: var(--critico-suave); }
+.perigo h3 { color: var(--critico); }

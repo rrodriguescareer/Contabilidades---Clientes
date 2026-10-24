@@ -1,16 +1,20 @@
 'use client';
-import { useState } from 'react';
 import { useFormStatus } from 'react-dom';
-import { categories, documentKinds, type Person, type Property, type Income } from '@/lib/data';
-import { addIncome, uploadDocument } from '@/lib/actions';
-export type Context={account:string;process:string;view:string};
-export function HiddenContext({context}:{context:Context}){return <>{Object.entries(context).map(([key,value])=><input type="hidden" key={key} name={key} value={value}/>)}</>;}
-export function Submit({children,pendingText='A guardar…'}:{children:React.ReactNode;pendingText?:string}){const {pending}=useFormStatus();return <button className="primary" type="submit" disabled={pending}>{pending?pendingText:children}</button>;}
-export function IncomeForm({context,people,properties}:{context:Context;people:Person[];properties:Property[]}){
- const [category,setCategory]=useState('employment'),[mode,setMode]=useState('documents');const property=['property_sale','property_rent'].includes(category);
- return <form action={addIncome}><HiddenContext context={context}/><div className="field-grid"><label>Classe<select name="category" value={category} onChange={e=>setCategory(e.target.value)}>{Object.entries(categories).map(([key,title])=><option value={key} key={key}>{title}</option>)}</select></label>{property?<label>Imóvel<select name="property" required><option value="">Escolha o imóvel</option>{properties.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select></label>:<label>Pessoa do agregado<select name="person" required={category!=='deduction'}><option value="">{category==='deduction'?'Agregado':'Escolha a pessoa'}</option>{people.map(p=><option key={p.id} value={p.id}>{p.full_name}</option>)}</select></label>}<label>Descrição / entidade<input name="title" required maxLength={200}/></label><label>Modo de entrega<select name="mode" value={mode} onChange={e=>setMode(e.target.value)}><option value="documents">Apenas documentos</option><option value="manual">Dados e documentos</option></select></label></div>{property&&<p className="fine">Os documentos são associados ao imóvel. A titularidade será confirmada pelo profissional.</p>}{mode==='manual'&&<label>Informação do rendimento<textarea name="details" rows={5} maxLength={10000} placeholder="Datas, montantes, entidades e informação relevante. O profissional confirmará os dados antes de preparar a declaração."/></label>}<Submit>Adicionar rendimento</Submit><p className="fine">Nesta primeira versão, o preenchimento manual é descritivo. O questionário fiscal estruturado será acrescentado por classe.</p></form>;
-}
-export function UploadForm({context,incomes}:{context:Context;incomes:Income[]}){
- const [income,setIncome]=useState('');const selected=incomes.find(i=>i.id===income);const kinds=selected?documentKinds[selected.category]:['Documento do agregado','Documento de entrega do profissional','Outros'];
- return <form action={uploadDocument}><HiddenContext context={context}/><div className="field-grid"><label>Contexto<select name="income" value={income} onChange={e=>setIncome(e.target.value)}><option value="">Geral do processo</option>{incomes.map(i=><option key={i.id} value={i.id}>{i.title} · {categories[i.category]}</option>)}</select></label><label>Tipo documental<select name="kind" key={income}>{kinds.map(k=><option key={k}>{k}</option>)}</select></label></div><label>PDF, JPEG ou PNG · máximo 10 MB<input type="file" name="file" accept="application/pdf,image/jpeg,image/png" required/></label><Submit>Enviar documento</Submit><p className="fine">Armazenamento privado. O envio não valida o conteúdo fiscal. Não carregue senhas ou códigos de autenticação.</p></form>;
+
+/** Botão de submissão que se desativa sozinho enquanto a ação corre. */
+export function Submeter({
+  children,
+  aDecorrer = 'A guardar…',
+  className = 'btn btn-bloco',
+}: {
+  children: React.ReactNode;
+  aDecorrer?: string;
+  className?: string;
+}) {
+  const { pending } = useFormStatus();
+  return (
+    <button className={className} type="submit" disabled={pending}>
+      {pending ? aDecorrer : children}
+    </button>
+  );
 }
