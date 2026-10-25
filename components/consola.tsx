@@ -24,7 +24,7 @@ export function Consola({
     <div className={e.consola}>
       <aside className={e.lateral}>
         <Link href="/app" className={e.marca}>
-          <img src="/rr-branco.svg" alt="RR." width={294} height={195} />
+          <img src="/rr-branco.svg" alt="RR." width={259} height={142} />
           <span className={e.marcaTexto}>
             <strong>Gestão</strong>
             <span>Centro de administração</span>

@@ -20,7 +20,7 @@ export function EcraAutenticacao({ children, titulo, descricao, mensagem, erro, 
   return (
     <main id="principal" className={a.ecra}>
       <section className={a.marca} aria-hidden="true">
-        <img src="/rr-branco.svg" alt="" width={294} height={195} />
+        <img src="/rr-branco.svg" alt="" width={259} height={142} />
         <div className={a.marcaTexto}>
           <h2>Os seus clientes, num só lugar.</h2>
           <p>
@@ -34,7 +34,7 @@ export function EcraAutenticacao({ children, titulo, descricao, mensagem, erro, 
       <section className={a.coluna}>
         <div className={a.cartao}>
           <Link href="/" className={a.logo}>
-            <img src="/rr.svg" alt="RR." width={294} height={195} />
+            <img src="/rr.svg" alt="RR." width={259} height={142} />
           </Link>
 
           <div className="pilha pilha-2">
