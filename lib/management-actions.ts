@@ -82,3 +82,11 @@ export async function inviteManagedUser(form:FormData){
  if(role==='accountant'){const {error:grant}=await client.rpc('set_staff_access',{target:data.user.id,enabled:true});if(grant)finish('/utilizadores','Convite criado; não foi possível atribuir o perfil. Atribua-o na lista de utilizadores.',true);}
  finish('/utilizadores','Convite enviado. Pode associar o cliente às empresas pretendidas.');
 }
+
+export async function setModuleAccess(form:FormData){
+ const {client}=await session();const target=text(form,'user');
+ if(!uuid(target))finish('/utilizadores','Utilizador inválido.',true);
+ const {error}=await client.rpc('definir_acessos',{target,com_irs:form.has('irs'),com_empresas:form.has('empresas')});
+ if(error)finish('/utilizadores','Não foi possível alterar os acessos.',true);
+ finish('/utilizadores','Acessos atualizados. As empresas associam-se no módulo Empresas.');
+}

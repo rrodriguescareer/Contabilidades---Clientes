@@ -70,8 +70,8 @@
     --e-1: .25rem; --e-2: .5rem; --e-3: .75rem; --e-4: 1rem;
     --e-5: 1.5rem; --e-6: 2rem; --e-7: 3rem; --e-8: 4rem; --e-9: 6rem;
     --r-sm: 8px; --r-md: 12px; --r-lg: 18px; --r-xl: 26px; --r-pill: 999px;
-    --largura: 1180px;
-    --gutter: clamp(1rem, 4vw, 2.5rem);
+    --largura: 1360px;
+    --gutter: clamp(20px, 4vw, 64px);
 
     /* Profundidade — sem sombras pesadas, a marca pede limpeza */
     --sombra-1: 0 1px 2px rgb(10 35 68 / .05), 0 1px 3px rgb(10 35 68 / .04);
