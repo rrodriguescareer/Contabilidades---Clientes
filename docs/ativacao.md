@@ -100,7 +100,7 @@ A mudança de conta/ano usa navegação da aplicação. Os botões apresentam o 
 
 Para um problema no acesso, distinguir: credenciais rejeitadas pelo Auth, email não confirmado, configuração Supabase em falta no Vercel da Gestão, migrações em falta e autorização profissional desativada. As mensagens da entrada foram separadas para tornar essa distinção visível. Sem acesso ao deployment e respetiva URL, a validação local não confirma o estado da aplicação publicada.
 
-A Gestão publicada indicada pelo responsável é `https://contabilidades-clientes.vercel.app`. O erro «Senhas inválidas» ocorre na autenticação, antes da autorização profissional. Se a mesma conta entrar no IRS, comparar `NEXT_PUBLIC_SUPABASE_URL` e a chave pública nas duas aplicações Vercel: devem apontar para o mesmo projeto Supabase. Se ambos rejeitarem, verificar a existência e confirmação da conta em Supabase → Authentication → Users e definir/recuperar a palavra-passe pelos mecanismos Auth. Uma migração de permissões não corrige uma palavra-passe incorreta nem cria uma conta Auth com password.
+A Gestão publicada indicada pelo responsável é `https://gestao.rr-contabilidade.com`. O erro «Senhas inválidas» ocorre na autenticação, antes da autorização profissional. Se a mesma conta entrar no IRS, comparar `NEXT_PUBLIC_SUPABASE_URL` e a chave pública nas duas aplicações Vercel: devem apontar para o mesmo projeto Supabase. Se ambos rejeitarem, verificar a existência e confirmação da conta em Supabase → Authentication → Users e definir/recuperar a palavra-passe pelos mecanismos Auth. Uma migração de permissões não corrige uma palavra-passe incorreta nem cria uma conta Auth com password.
 
 
 ### Atualização administrativa 009

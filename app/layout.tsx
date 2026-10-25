@@ -19,7 +19,7 @@ const titulos = Manrope({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://contabilidades-clientes.vercel.app'),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://gestao.rr-contabilidade.com'),
   title: { default: 'Gestão de Clientes · RR.', template: '%s · Gestão RR.' },
   description: 'Centro de administração de clientes, empresas, preços e pagamentos.',
   applicationName: 'Gestão RR.',
