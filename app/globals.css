@@ -59,7 +59,10 @@
     --critico-suave: #FDECEA;
 
     /* Tipografia */
-    --fonte: 'Inter', 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+    /* As do website: DM Sans no corpo, Manrope nos títulos. O manual de marca
+       indica Inter, mas o que está no ar é isto — e é por isto que se alinha. */
+    --fonte: var(--fonte-corpo), 'DM Sans', system-ui, sans-serif;
+    --fonte-titulo: var(--fonte-titulos), Manrope, system-ui, sans-serif;
     --fonte-num: var(--fonte);
     --t-xs: .75rem; --t-sm: .8125rem; --t-base: .9375rem; --t-md: 1rem;
     --t-lg: 1.125rem; --t-xl: 1.375rem; --t-2xl: 1.75rem; --t-3xl: 2.25rem;
@@ -119,12 +122,16 @@
     line-height: 1.6;
     color: var(--texto);
     background: var(--fundo);
-    font-feature-settings: 'cv11', 'ss01';
+
     min-height: 100dvh;
     overscroll-behavior-y: none;
   }
 
-  h1, h2, h3, h4 { line-height: 1.12; letter-spacing: -.025em; font-weight: 760; text-wrap: balance; }
+  h1, h2, h3, h4 {
+    font-family: var(--fonte-titulo);
+    line-height: 1.12; letter-spacing: -.065em;   /* o mesmo aperto do website */
+    font-weight: 760; text-wrap: balance;
+  }
   h1 { font-size: var(--t-3xl); }
   h2 { font-size: var(--t-2xl); }
   h3 { font-size: var(--t-xl); }

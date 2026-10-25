@@ -1,13 +1,21 @@
 import type { Metadata, Viewport } from 'next';
-import { Inter } from 'next/font/google';
+import { DM_Sans, Manrope } from 'next/font/google';
 import { RegistarServico } from '@/components/registar-servico';
 import './globals.css';
 
-const inter = Inter({
+// As mesmas do website: DM Sans no corpo, Manrope nos títulos.
+const corpo = DM_Sans({
   subsets: ['latin'],
   display: 'swap',
-  variable: '--fonte-inter',
+  variable: '--fonte-corpo',
   weight: ['400', '500', '600', '700', '800'],
+});
+
+const titulos = Manrope({
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--fonte-titulos',
+  weight: ['500', '600', '700', '800'],
 });
 
 export const metadata: Metadata = {
@@ -34,7 +42,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-PT" className={inter.variable}>
+    <html lang="pt-PT" className={`${corpo.variable} ${titulos.variable}`}>
       <body>
         <a className="skip" href="#principal">
           Saltar para o conteúdo
