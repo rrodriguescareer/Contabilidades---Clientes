@@ -1,12 +1,66 @@
 <!doctype html>
-<html lang="pt"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ative a sua conta IRS</title></head>
-<body style="margin:0;background:#eef3fb;font-family:Arial,Helvetica,sans-serif;color:#142a44;padding:32px 16px">
- <table role="presentation" style="width:100%;max-width:580px;margin:auto;border-collapse:collapse"><tr><td style="padding:0 0 24px;font-size:38px;font-weight:bold">RR<span style="color:#245fe3">.</span></td></tr><tr><td style="background:#fff;border-radius:16px;padding:36px">
- <p style="font-size:11px;letter-spacing:2px;color:#245fe3;font-weight:bold">PORTAL IRS</p><h1 style="font-size:28px;line-height:1.25">BEM-VINDO</h1>
- <p style="font-size:16px;line-height:1.7">O seu IRS começa aqui, com acompanhamento próximo e os documentos organizados num único lugar.</p>
- <p style="font-size:16px;line-height:1.7">Confirme o seu email para ativar a conta. Depois, pode preencher os dados pessoais, criar o agregado e adicionar os rendimentos e documentos — sem esperar por aprovação manual.</p>
- <p style="margin:30px 0"><a href="{{ .ConfirmationURL }}" style="display:inline-block;background:#245fe3;color:#fff;text-decoration:none;padding:15px 24px;border-radius:8px;font-weight:bold">Ativar a minha conta</a></p>
- <p style="font-size:13px;line-height:1.7;color:#677990">Se não criou esta conta, pode ignorar esta mensagem. A ligação é pessoal: não a partilhe. Nunca pedimos senhas do Portal das Finanças por email.</p>
- <p style="font-size:14px;line-height:1.7">Até já,<br><strong>Rúben Rodrigues</strong><br>Contabilista Certificado · Cédula n.º 145854</p>
- </td></tr><tr><td style="padding:22px 0;font-size:12px;color:#677990">Precisa de ajuda? <a href="mailto:contabilidade.rubenrodrigues@gmail.com" style="color:#245fe3">Fale comigo</a><br>Rua Augusto Simões 845 · 4470-147 Maia</td></tr></table>
-</body></html>
+<html lang="pt-PT">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
+<title>Confirme o seu email</title>
+</head>
+<body style="margin:0;padding:0;background:#F3F7FD;-webkit-font-smoothing:antialiased">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0">Falta um passo para ativar a sua conta.</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F3F7FD">
+<tr><td align="center" style="padding:32px 16px">
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background:#FFFFFF;border-radius:18px;overflow:hidden">
+
+  <tr><td style="background:#0A2344;padding:28px 32px">
+    <img src="https://www.rr-contabilidade.com/assets/assinatura-email.png" width="232" alt="RR. — Contabilidade · Fiscalidade"
+         style="display:block;width:232px;max-width:100%;height:auto;border:0">
+  </td></tr>
+
+  <tr><td style="padding:36px 32px 8px">
+    <p style="margin:0 0 10px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:11px;font-weight:700;letter-spacing:1.2px;color:#2867F8;text-transform:uppercase">Criar conta</p>
+    <h1 style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:25px;line-height:1.22;font-weight:800;letter-spacing:-0.5px;color:#0A2344">Falta um passo para começar.</h1>
+  </td></tr>
+
+  <tr><td style="padding:14px 32px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.62;color:#11223C">
+    <p style="margin:0 0 14px">Recebemos o seu registo nas plataformas RR. Confirme o email para ativar a conta.</p>
+    <p style="margin:0 0 14px">A seguir pode preencher os dados pessoais, criar o agregado e enviar os documentos ao seu ritmo — não precisa de esperar por aprovação.</p>
+  </td></tr>
+
+  <tr><td style="padding:28px 32px 4px">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+      <tr><td style="background:#2867F8;border-radius:10px">
+        <a href="{{ .ConfirmationURL }}" style="display:inline-block;padding:15px 28px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;font-weight:700;color:#FFFFFF;text-decoration:none">Confirmar o meu email</a>
+      </td></tr>
+    </table>
+  </td></tr>
+
+  <tr><td style="padding:22px 32px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12.5px;line-height:1.6;color:#52647D">
+    <p style="margin:0">Se o botão não funcionar, copie esta ligação para o browser:<br>
+      <span style="color:#52647D;word-break:break-all">{{ .ConfirmationURL }}</span></p>
+  </td></tr>
+
+  <tr><td style="padding:24px 32px 0">
+    <div style="height:1px;background:#E4EBF6;line-height:1px;font-size:0">&nbsp;</div>
+  </td></tr>
+
+  <tr><td style="padding:18px 32px 32px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12.5px;line-height:1.65;color:#52647D">
+    <p style="margin:0 0 12px">Se não criou esta conta, ignore esta mensagem — sem a confirmação, nada é ativado.</p>
+    <p style="margin:0;color:#11223C;font-weight:700">Rúben Miguel da Silva Duarte Meirinho Rodrigues</p>
+    <p style="margin:2px 0 0">Contabilista Certificado n.º 145854 · Maia, Porto<br>
+      <a href="mailto:contabilidade.rubenrodrigues@gmail.com" style="color:#52647D;text-decoration:underline">contabilidade.rubenrodrigues@gmail.com</a> ·
+      <a href="https://www.rr-contabilidade.com" style="color:#52647D;text-decoration:underline">rr-contabilidade.com</a></p>
+  </td></tr>
+
+</table>
+
+<p style="margin:18px 0 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:11.5px;line-height:1.6;color:#52647D;max-width:560px">
+  Esta mensagem foi enviada automaticamente porque alguém a pediu a partir das plataformas RR. Não responda a este endereço.
+</p>
+
+</td></tr>
+</table>
+</body>
+</html>
