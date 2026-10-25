@@ -37,9 +37,47 @@ templates mostram um quadrado vazio.
 
 ## O que falta do lado do Supabase
 
-1. **SMTP**: Project Settings → Authentication → SMTP Settings.
-2. **URL Configuration**: o *Site URL* e os *Redirect URLs* têm de incluir
-   `https://irs.rr-contabilidade.com` e `https://gestao.rr-contabilidade.com`.
-3. Só depois de um email de teste chegar é que se liga
-   `AUTH_EMAIL_BRANDING_READY=true` nas duas aplicações Vercel. Essa variável é
-   o que mantém o registo e a recuperação fechados enquanto o email não presta.
+O domínio `rr-contabilidade.com` está verificado no Resend (região
+`eu-west-1`), com DKIM e os dois CNAME de Return-Path a passar.
+
+### 1. SMTP
+
+Project Settings → Authentication → SMTP Settings:
+
+| Campo | Valor |
+| --- | --- |
+| Host | `smtp.resend.com` |
+| Port | `465` |
+| Username | `resend` |
+| Password | a chave de API do Resend (permissão *Sending access*) |
+| Sender email | `contabilidade@rr-contabilidade.com` |
+| Sender name | `Rúben Rodrigues · Contabilidade` |
+
+A porta 465 é SMTPS — ligação cifrada desde o início. As portas 587 e 2587
+também servem, mas usam STARTTLS, que começa em claro.
+
+### 2. Limite de envio
+
+Authentication → Rate Limits. Por omissão o Supabase deixa passar poucos
+emails por hora, porque conta com o serviço interno dele. Com SMTP próprio
+esse limite pode subir — senão, em campanha, os clientes ficam à espera do
+email de confirmação sem perceber porquê.
+
+### 3. URL Configuration
+
+*Site URL*: `https://irs.rr-contabilidade.com`
+
+*Redirect URLs*: esse e `https://gestao.rr-contabilidade.com`.
+
+### 4. Só no fim
+
+Depois de um email de teste chegar mesmo, liga-se
+`AUTH_EMAIL_BRANDING_READY=true` nas duas aplicações Vercel. Essa variável é o
+que mantém o registo e a recuperação fechados enquanto o email não presta —
+ligá-la antes de confirmar abre o registo com o email partido.
+
+### Recomendado, não obrigatório
+
+Não há DMARC no domínio. Um TXT em `_dmarc` com
+`v=DMARC1; p=none; rua=mailto:contabilidade.rubenrodrigues@gmail.com`
+melhora a entrega e dá relatórios de quem anda a enviar em teu nome.
