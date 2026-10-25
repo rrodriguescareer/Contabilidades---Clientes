@@ -19,6 +19,7 @@ const titulos = Manrope({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://contabilidades-clientes.vercel.app'),
   title: { default: 'Gestão de Clientes · RR.', template: '%s · Gestão RR.' },
   description: 'Centro de administração de clientes, empresas, preços e pagamentos.',
   applicationName: 'Gestão RR.',
@@ -31,6 +32,15 @@ export const metadata: Metadata = {
     apple: '/apple-touch-icon.png',
   },
   robots: { index: false, follow: false },
+  // Não é indexada, mas a ligação é partilhada em conversas: vale o cartão.
+  openGraph: {
+    type: 'website',
+    locale: 'pt_PT',
+    siteName: 'Gestão RR.',
+    title: 'Gestão de clientes',
+    description: 'Centro de administração — acesso reservado.',
+    images: [{ url: '/og.png', width: 1200, height: 630, alt: 'RR. — Contabilidade · Fiscalidade' }],
+  },
 };
 
 export const viewport: Viewport = {
