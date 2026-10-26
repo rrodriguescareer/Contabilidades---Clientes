@@ -111,7 +111,8 @@ begin
   return dados || jsonb_build_object(
     'cabecalho', (
       select jsonb_build_object(
-        'cliente', a.name, 'estado', c.status, 'desde', c.status_changed_at,
+        'cliente', a.name, 'conta', c.account_id,
+        'estado', c.status, 'desde', c.status_changed_at,
         'ano', c.tax_year, 'submetido_em', c.submitted_by_client_at,
         'valor_final', c.final_amount_cents, 'sentido', c.final_direction,
         'nif', (select pr.nif from public.profiles pr
