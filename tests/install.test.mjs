@@ -21,7 +21,7 @@ test('one initial installation creates the complete schema and supports approval
  const db=await fixture();
  try{
   await db.exec(sql);
-  assert.equal((await db.query("select count(*)::int as n from pg_tables where schemaname='public'")).rows[0].n,25);
+  assert.equal((await db.query("select count(*)::int as n from pg_tables where schemaname='public'")).rows[0].n,30);
   assert.deepEqual((await db.query("select tablename from pg_tables where schemaname='public' and not rowsecurity")).rows,[]);
   assert.equal((await db.query("select public from storage.buckets where id='irs-documents'")).rows[0].public,false);
   const staff='20000000-0000-4000-8000-000000000001',client='20000000-0000-4000-8000-000000000002';

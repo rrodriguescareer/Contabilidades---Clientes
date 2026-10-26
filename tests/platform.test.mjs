@@ -61,7 +61,7 @@ test('production registration, administration, quotations, checkout and private 
    await actor(ids.staff);assert.equal((await db.query('select accepted_by from public.household_invitations where id=$1',[invitation])).rows[0].accepted_by,ids.guest);
   });
   const newCase=async(account=a)=>{await actor(ids.staff);const id=(await db.query('select public.create_irs_case($1,$2) as id',[account,year++])).rows[0].id;await actor(account===a?ids.a:ids.b);return id;};
-  const income=async(process,category,{person=holder,property=null,account=a}={})=>db.query("insert into public.income_records(account_id,case_id,category,person_id,property_id,title,mode) values($1,$2,$3,$4,$5,'Income','documents')",[account,process,category,property?null:person,property]);
+  const income=async(process,category,{person=holder,property=null,account=a}={})=>db.query("insert into public.income_records(account_id,case_id,category,person_id,property_id,title,mode) values($1,$2,$3,$4,$5,'Income','documents')",[account,process,category,person,property]);
   const property=async(process,account=a)=>(await db.query("insert into public.property_assets(account_id,case_id,label) values($1,$2,'Property') returning id",[account,process])).rows[0].id;
   const quote=async(process,coupon='',account=a)=>(await db.query('select public.quote_irs_checkout($1,$2,$3) as quote',[account,process,coupon])).rows[0].quote;
   await t.test('pricing counts people, categories and distinct properties using integer cents',async()=>{
@@ -109,7 +109,7 @@ test('production registration, administration, quotations, checkout and private 
    await actor(ids.staff);await db.query('select public.set_client_billing($1,true,null)',[ids.a]);
    const c=await newCase();await income(c,'employment');assert.equal((await quote(c)).total_cents,0);
    const result=(await db.query("select public.begin_irs_checkout($1,$2,'') as data",[a,c])).rows[0].data;assert.equal(result.state,'paid');
-   assert.equal((await db.query('select status from public.irs_cases where id=$1',[c])).rows[0].status,'review');
+   assert.equal((await db.query('select status from public.irs_cases where id=$1',[c])).rows[0].status,'submitted_by_client');
    assert.equal((await db.query('select provider_order_id from public.irs_checkouts where id=$1',[result.id])).rows[0].provider_order_id,null);
    await actor(ids.staff);await db.query('select public.set_client_billing($1,false,null)',[ids.a]);
   });
@@ -125,7 +125,7 @@ test('production registration, administration, quotations, checkout and private 
    for(let i=0;i<2;i++)await db.query('select public.finish_revolut_order($1,$2,$3,$4,1850,$5)',[attempt.id,'provider-order-1',attempt.id,'COMPLETED','EUR']);
    await actor(ids.a);assert.equal((await db.query('select state from public.irs_checkouts where id=$1',[attempt.id])).rows[0].state,'paid');
    assert.equal((await db.query('select count(*)::int as n from public.progress_events where case_id=$1',[c])).rows[0].n,1);
-   assert.equal((await db.query('select status from public.irs_cases where id=$1',[c])).rows[0].status,'review');
+   assert.equal((await db.query('select status from public.irs_cases where id=$1',[c])).rows[0].status,'submitted_by_client');
   });
   await t.test('identical documents reuse private bytes within one case only',async()=>{
    const c=await newCase(),hash='12'.repeat(32);

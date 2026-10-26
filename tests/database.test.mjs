@@ -15,13 +15,14 @@ test('shared schema, database constraints and tenant isolation',async t=>{
   create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
   create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text references storage.buckets(id),name text not null);
   alter table storage.objects enable row level security;grant select,insert on storage.objects to authenticated;`);
-  await db.exec(await readFile(new URL('../supabase/migrations/202610230001_core.sql',import.meta.url),'utf8'));
-  await db.exec(await readFile(new URL('../supabase/migrations/202610230002_legal_acceptances.sql',import.meta.url),'utf8'));
-  await db.exec(await readFile(new URL('../supabase/migrations/202610230003_production_legal_version.sql',import.meta.url),'utf8'));
-  await db.exec(await readFile(new URL('../supabase/migrations/202610230004_annual_cases.sql',import.meta.url),'utf8'));
-  await db.exec(await readFile(new URL('../supabase/migrations/202610230005_accounts_and_management.sql',import.meta.url),'utf8'));
-  await db.exec(await readFile(new URL('../supabase/migrations/202610230006_checkout.sql',import.meta.url),'utf8'));
-  await db.exec(await readFile(new URL('../supabase/migrations/202610230007_document_deduplication.sql',import.meta.url),'utf8'));
+  // A lista era escrita a mao e ficava para tras de cada migracao nova: o
+  // teste passava contra um esquema que ja nao existia. Agora le a pasta,
+  // com o mesmo filtro do empacotador.
+  const { readdir } = await import('node:fs/promises');
+  const pasta = new URL('../supabase/migrations/', import.meta.url);
+  for (const nome of (await readdir(pasta)).filter(n=>/^\d+_[a-z0-9_]+\.sql$/.test(n)).sort()) {
+    await db.exec(await readFile(new URL(nome, pasta),'utf8'));
+  }
   for(const [name,id]of Object.entries(ids)) await db.query('insert into auth.users(id,email,raw_user_meta_data) values($1,$2,$3)',[id,(name==='staff'?'contabilidade.rubenrodrigues@gmail.com':name+'@example.com'),JSON.stringify({terms_accepted:true,terms_version:'2026-10-23.3',privacy_version:'2026-10-23.3',full_name:'Test '+name,birth_date:'1980-01-01',nif:name==='a'?'123456789':name==='b'?'223456789':name==='member'?'323456789':'423456789'})]);
   await db.query('insert into public.staff_users(user_id) values($1) on conflict do nothing',[ids.staff]);
   const actor=async id=>{await db.exec('reset role');await db.query("select set_config('request.jwt.claim.sub',$1,false)",[id]);await db.exec('set role authenticated');};
@@ -83,7 +84,7 @@ test('shared schema, database constraints and tenant isolation',async t=>{
    await assert.rejects(db.query("insert into public.income_records(account_id,case_id,category,person_id,title,mode) values($1,$2,'employment',$3,'Wrong','documents')",[a,ca,pb]));
    await assert.rejects(db.query("insert into public.income_records(account_id,case_id,category,title,mode) values($1,$2,'employment','Missing','documents')",[a,ca]));
    await actor(ids.a);const asset=(await db.query("insert into public.property_assets(account_id,case_id,label) values($1,$2,'Imóvel 1') returning id",[a,ca])).rows[0].id;
-   await db.query("insert into public.income_records(account_id,case_id,category,property_id,title,mode) values($1,$2,'property_sale',$3,'Sale','documents')",[a,ca,asset]);
+   await db.query("insert into public.income_records(account_id,case_id,category,property_id,person_id,title,mode) values($1,$2,'property_sale',$3,$4,'Sale','documents')",[a,ca,asset,pa]);
   });
   await t.test('message authors cannot be forged',async()=>{
    await actor(ids.a);await assert.rejects(db.query('insert into public.messages(account_id,case_id,author_id,body) values($1,$2,$3,$4)',[a,ca,ids.b,'Forged']));
@@ -100,11 +101,11 @@ test('shared schema, database constraints and tenant isolation',async t=>{
    await actor(ids.b);assert.equal((await db.query('select * from public.documents')).rows.length,0);assert.equal((await db.query('select * from storage.objects')).rows.length,0);
   });
   await t.test('review locks collection; staff progress update is atomic',async()=>{
-   await actor(ids.a);await assert.rejects(db.query('select public.submit_case($1,$2)',[a,ca]));await actor(ids.staff);await db.query("update public.irs_cases set status='review' where id=$1",[ca]);await actor(ids.a);
+   await actor(ids.a);await assert.rejects(db.query('select public.submit_case($1,$2)',[a,ca]));await actor(ids.staff);await db.query("update public.irs_cases set status='validation' where id=$1",[ca]);await actor(ids.a);
    await assert.rejects(db.query("insert into public.income_records(account_id,case_id,category,person_id,title,mode) values($1,$2,'employment',$3,'Locked','documents')",[a,ca,pa]));
    await db.query('insert into public.messages(account_id,case_id,body) values($1,$2,$3)',[a,ca,'Clarification while under review']);
    await actor(ids.staff);await assert.rejects(db.query('select public.publish_case_progress($1,$2,$3,$4,$5)',[a,ca,'Bad update','Body','invalid']));assert.equal((await db.query('select * from public.progress_events')).rows.length,0);
-   await db.query('select public.publish_case_progress($1,$2,$3,$4,$5)',[a,ca,'Reopened','Please complete documents','missing']);await actor(ids.a);assert.equal((await db.query('select * from public.progress_events')).rows.length,1);
+   await db.query('select public.publish_case_progress($1,$2,$3,$4,$5)',[a,ca,'Reopened','Please complete documents','collecting']);await actor(ids.a);assert.equal((await db.query('select * from public.progress_events')).rows.length,1);
   });
   await t.test('invitation requests do not create broad family access',async()=>{
    await actor(ids.a);await db.query('insert into public.invitation_requests(account_id,person_id,email) values($1,$2,$3)',[a,person,'member@example.com']);
@@ -152,7 +153,7 @@ test('shared schema, database constraints and tenant isolation',async t=>{
    await assert.rejects(db.query('select public.link_case_person($1,$2,$3,$4)',[a,nextCase,person,'conjuge']));
    assert.equal((await db.query('select count(*) as n from public.case_people where case_id=$1',[nextCase])).rows[0].n,2);
    assert.equal((await db.query('select relationship from public.case_people where case_id=$1 and person_id=$2',[ca,person])).rows[0].relationship,'conjuge');
-   await assert.rejects(db.query('select public.submit_case($1,$2)',[a,nextCase]));await actor(ids.staff);await db.query("update public.irs_cases set status='review' where id=$1",[nextCase]);await actor(ids.a);
+   await assert.rejects(db.query('select public.submit_case($1,$2)',[a,nextCase]));await actor(ids.staff);await db.query("update public.irs_cases set status='validation' where id=$1",[nextCase]);await actor(ids.a);
    await assert.rejects(db.query('select public.link_case_person($1,$2,$3,$4)',[a,nextCase,person,'outro']));
   });
   await t.test('suspension and revoked IRS grants cannot be undone by an approval retry',async()=>{

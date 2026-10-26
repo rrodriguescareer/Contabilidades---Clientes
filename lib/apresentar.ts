@@ -20,12 +20,14 @@ export function tamanho(bytes: number) {
 
 export const ESTADO_PROCESSO: Record<string, { rotulo: string; classe: string }> = {
   collecting: { rotulo: 'Em recolha', classe: 'etiqueta-acao' },
-  review: { rotulo: 'Enviado para revisão', classe: 'etiqueta-atencao' },
-  missing: { rotulo: 'Elementos em falta', classe: 'etiqueta-critico' },
-  validation: { rotulo: 'Pronto para validação', classe: 'etiqueta-atencao' },
-  authorization: { rotulo: 'Aguarda autorização', classe: 'etiqueta-atencao' },
-  submitted: { rotulo: 'Submetido', classe: 'etiqueta-positivo' },
-  completed: { rotulo: 'Concluído', classe: 'etiqueta-positivo' },
+  submitted_by_client: { rotulo: 'Submetido pelo cliente', classe: 'etiqueta-atencao' },
+  accepted: { rotulo: 'Aceite', classe: 'etiqueta-atencao' },
+  validation: { rotulo: 'Em validação', classe: 'etiqueta-atencao' },
+  approved: { rotulo: 'Aprovado', classe: 'etiqueta-acao' },
+  submitting: { rotulo: 'Em submissão', classe: 'etiqueta-acao' },
+  filed: { rotulo: 'Submetido na AT', classe: 'etiqueta-positivo' },
+  monitoring: { rotulo: 'Em acompanhamento', classe: 'etiqueta-positivo' },
+  closed: { rotulo: 'Fechado', classe: 'etiqueta-positivo' },
 };
 
 export const ESTADO_DOCUMENTO: Record<string, { rotulo: string; classe: string }> = {
@@ -45,4 +47,4 @@ export const ESTADO_PAGAMENTO: Record<string, { rotulo: string; classe: string }
 };
 
 /** A recolha só está aberta nestes estados. */
-export const editavel = (estado: string) => estado === 'collecting' || estado === 'missing';
+export const editavel = (estado: string) => estado === 'collecting';
