@@ -32,14 +32,14 @@
   <tr><td style="padding:28px 32px 4px">
     <table role="presentation" cellpadding="0" cellspacing="0" border="0">
       <tr><td style="background:#2867F8;border-radius:10px">
-        <a href="{{ .ConfirmationURL }}" style="display:inline-block;padding:15px 28px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;font-weight:700;color:#FFFFFF;text-decoration:none">Confirmar o meu email</a>
+        <a href="{{ .RedirectTo }}&amp;token_hash={{ .TokenHash }}&amp;type=signup" style="display:inline-block;padding:15px 28px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;font-weight:700;color:#FFFFFF;text-decoration:none">Confirmar o meu email</a>
       </td></tr>
     </table>
   </td></tr>
 
   <tr><td style="padding:22px 32px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12.5px;line-height:1.6;color:#52647D">
     <p style="margin:0">Se o botão não funcionar, copie esta ligação para o browser:<br>
-      <span style="color:#52647D;word-break:break-all">{{ .ConfirmationURL }}</span></p>
+      <span style="color:#52647D;word-break:break-all">{{ .RedirectTo }}&amp;token_hash={{ .TokenHash }}&amp;type=signup</span></p>
   </td></tr>
 
   <tr><td style="padding:24px 32px 0">

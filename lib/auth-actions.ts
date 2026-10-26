@@ -28,7 +28,7 @@ export async function signUp(form: FormData) {
   if (!name || !/^\d{9}$/.test(nif) || !/^\d{4}-\d{2}-\d{2}$/.test(dob) || !phone || !address || password.length<12 || password.length>128 || !form.has('consent')) error('Preencha todos os campos, confirme a autorização e use uma palavra-passe com 12 ou mais caracteres.','/registar');
   const origin=siteUrl();if (!origin) error('Falta configurar NEXT_PUBLIC_SITE_URL para confirmar o email.','/registar');
   const client=await supabase();
-  const {error: failure}=await client.auth.signUp({email,password,options:{emailRedirectTo:`${origin}/auth/callback`,data:{full_name:name,nif,birth_date:dob,phone,address}}});
+  const {error: failure}=await client.auth.signUp({email,password,options:{emailRedirectTo:`${origin}/auth/callback?next=/app`,data:{full_name:name,nif,birth_date:dob,phone,address}}});
   if (failure) error('Não foi possível concluir o registo. Verifique os dados ou tente recuperar o acesso.','/registar');
   redirect('/entrar?mensagem=Confirme%20o%20email%20para%20continuar.%20O%20acesso%20ao%20IRS%20será%20aprovado%20pelo%20profissional.');
 }
