@@ -2323,5 +2323,327 @@ as $$
    where cp.case_id = processo and cp.relationship = 'titular' limit 1
 $$;
 
+-- Source: 202610260024_precos_campanhas_avisos.sql
+-- Preços, campanhas e avisos deixam de viver em código.
+-- A política semeia-se com os valores que já estavam na função, para o preço
+-- não mudar no dia em que isto entra.
+
+create table if not exists public.pricing_policies (
+  id uuid primary key default gen_random_uuid(),
+  nome text not null,
+  activa boolean not null default false,
+  valores jsonb not null,
+  notas text not null default '',
+  criada_em timestamptz not null default now(),
+  criada_por uuid references auth.users(id)
+);
+alter table public.pricing_policies drop constraint if exists pricing_policies_nome_check;
+alter table public.pricing_policies add constraint pricing_policies_nome_check
+  check (length(nome) between 2 and 120);
+
+-- Só uma política activa de cada vez: duas seria o preço a depender da sorte.
+create unique index if not exists pricing_policies_uma_activa
+  on public.pricing_policies ((activa)) where activa;
+
+create table if not exists public.campaigns (
+  id uuid primary key default gen_random_uuid(),
+  nome text not null,
+  rotulo_publico text not null,
+  tipo text not null,
+  valor integer not null,
+  activa boolean not null default false,
+  inicio timestamptz,
+  fim timestamptz,
+  criada_em timestamptz not null default now(),
+  criada_por uuid references auth.users(id)
+);
+alter table public.campaigns drop constraint if exists campaigns_tipo_check;
+alter table public.campaigns add constraint campaigns_tipo_check
+  check (tipo in ('percentagem','fixo'));
+alter table public.campaigns drop constraint if exists campaigns_valor_check;
+alter table public.campaigns add constraint campaigns_valor_check
+  check (valor > 0 and (tipo <> 'percentagem' or valor <= 100));
+alter table public.campaigns drop constraint if exists campaigns_janela_check;
+alter table public.campaigns add constraint campaigns_janela_check
+  check (inicio is null or fim is null or fim > inicio);
+alter table public.campaigns drop constraint if exists campaigns_nomes_check;
+alter table public.campaigns add constraint campaigns_nomes_check
+  check (length(nome) between 2 and 120 and length(rotulo_publico) between 2 and 160);
+
+create table if not exists public.avisos (
+  id uuid primary key default gen_random_uuid(),
+  mensagem text not null,
+  tom text not null default 'info',
+  activo boolean not null default false,
+  inicio timestamptz,
+  fim timestamptz,
+  no_irs boolean not null default true,
+  no_website boolean not null default false,
+  criado_em timestamptz not null default now(),
+  criado_por uuid references auth.users(id)
+);
+alter table public.avisos drop constraint if exists avisos_mensagem_check;
+alter table public.avisos add constraint avisos_mensagem_check
+  check (length(mensagem) between 5 and 400);
+alter table public.avisos drop constraint if exists avisos_tom_check;
+alter table public.avisos add constraint avisos_tom_check
+  check (tom in ('info','atencao','critico'));
+alter table public.avisos drop constraint if exists avisos_janela_check;
+alter table public.avisos add constraint avisos_janela_check
+  check (inicio is null or fim is null or fim > inicio);
+
+alter table public.pricing_policies enable row level security;
+alter table public.campaigns enable row level security;
+alter table public.avisos enable row level security;
+
+drop policy if exists politica_gabinete on public.pricing_policies;
+drop policy if exists campanha_gabinete on public.campaigns;
+drop policy if exists aviso_gabinete on public.avisos;
+drop policy if exists aviso_publico on public.avisos;
+
+-- Preços e campanhas: só o gabinete mexe. O cliente vê o efeito no orçamento,
+-- não a tabela.
+create policy politica_gabinete on public.pricing_policies
+  for all using (public.is_staff()) with check (public.is_staff());
+create policy campanha_gabinete on public.campaigns
+  for all using (public.is_staff()) with check (public.is_staff());
+create policy aviso_gabinete on public.avisos
+  for all using (public.is_staff()) with check (public.is_staff());
+
+-- Os avisos activos são públicos: é esse o objectivo deles.
+create policy aviso_publico on public.avisos
+  for select using (
+    activo
+    and (inicio is null or inicio <= now())
+    and (fim is null or fim > now())
+  );
+
+/* Os valores em vigor. Se não houver política activa, valem os que estavam
+   na função — o preço nunca fica indefinido. */
+create or replace function public.precos_em_vigor()
+returns jsonb
+language sql
+stable
+set search_path = ''
+as $$
+  select coalesce(
+    (select valores from public.pricing_policies where activa limit 1),
+    '{"base":1850,"varios_titulares":500,"a_e_b":1500,"b_adicional":500,
+      "rendas_unica":0,"rendas_ate2":500,"rendas_ate5":1000,"rendas_mais":2000,
+      "mais_valias_titulos":1000,"mais_valias_imovel":1000}'::jsonb)
+$$;
+
+/** A campanha em vigor, se houver. */
+create or replace function public.campanha_em_vigor()
+returns public.campaigns
+language sql
+stable
+set search_path = ''
+as $$
+  select * from public.campaigns
+   where activa
+     and (inicio is null or inicio <= now())
+     and (fim is null or fim > now())
+   order by criada_em desc limit 1
+$$;
+
+-- Source: 202610260025_precos_configuraveis.sql
+-- O preço passa a sair da política em vigor em vez de números no corpo da
+-- função. Os valores por omissão são os que lá estavam, por isso nada muda
+-- enquanto não for criada uma política.
+
+create or replace function public.price_irs_case(account uuid, process uuid)
+returns jsonb
+language plpgsql
+stable security definer
+set search_path = ''
+as $$
+declare
+  p jsonb := public.precos_em_vigor();
+  items jsonb;
+  total integer;
+  workers integer; sales integer; rents integer;
+  has_a boolean; has_b boolean; has_h boolean; has_g boolean;
+  kinds integer; amount integer;
+  v integer;
+begin
+  if not public.can_read_account(account)
+     or not exists(select 1 from public.irs_cases c where c.id = process and c.account_id = account) then
+    raise exception 'Not authorized' using errcode = '42501';
+  end if;
+
+  v := (p->>'base')::int;
+  items := jsonb_build_array(jsonb_build_object(
+    'code','base',
+    'label','Preparação IRS — primeiro tipo de rendimento (IVA incluído)',
+    'amount_cents', v));
+  total := v;
+
+  select count(distinct person_id) filter (where category in ('employment','pension')),
+         count(distinct property_id) filter (where category = 'property_sale'),
+         count(distinct property_id) filter (where category = 'property_rent'),
+         coalesce(bool_or(category = 'employment'), false),
+         coalesce(bool_or(category = 'independent'), false),
+         coalesce(bool_or(category = 'pension'), false),
+         coalesce(bool_or(category = 'securities'), false),
+         count(distinct category) filter (where category <> 'deduction')
+    into workers, sales, rents, has_a, has_b, has_h, has_g, kinds
+    from public.income_records where account_id = account and case_id = process;
+
+  if kinds = 0 then
+    raise exception 'Add at least one income type' using errcode = '22023';
+  end if;
+
+  if workers > 1 then
+    v := (p->>'varios_titulares')::int;
+    items := items || jsonb_build_array(jsonb_build_object(
+      'code','household_work','label','Várias pessoas com trabalho ou pensões','amount_cents', v));
+    total := total + v;
+  end if;
+
+  if has_a and has_b then
+    v := (p->>'a_e_b')::int;
+    items := items || jsonb_build_array(jsonb_build_object(
+      'code','a_and_b','label','Acumulação de categorias A e B','amount_cents', v));
+    total := total + v;
+  elsif has_h and has_b then
+    v := (p->>'b_adicional')::int;
+    items := items || jsonb_build_array(jsonb_build_object(
+      'code','additional_b','label','Categoria B adicional às pensões','amount_cents', v));
+    total := total + v;
+  end if;
+
+  if rents > 0 then
+    amount := case
+      when rents <= 2 then case when kinds = 1 then (p->>'rendas_unica')::int else (p->>'rendas_ate2')::int end
+      when rents <= 5 then (p->>'rendas_ate5')::int
+      else (p->>'rendas_mais')::int end;
+    items := items || jsonb_build_array(jsonb_build_object(
+      'code','rents','label','Rendas — ' || rents || ' imóvel(is)','amount_cents', amount));
+    total := total + amount;
+  end if;
+
+  if has_g then
+    amount := (p->>'mais_valias_titulos')::int;
+    items := items || jsonb_build_array(jsonb_build_object(
+      'code','securities','label','Mais-valias de ações e outros títulos — categoria G','amount_cents', amount));
+    total := total + amount;
+  end if;
+
+  if sales > 0 then
+    amount := (p->>'mais_valias_imovel')::int * sales;
+    items := items || jsonb_build_array(jsonb_build_object(
+      'code','property_sales','label','Mais-valias de imóveis — ' || sales || ' imóvel(is)','amount_cents', amount));
+    total := total + amount;
+  end if;
+
+  return jsonb_build_object(
+    'version','2026-10-26.1','currency','EUR','items', items,
+    'subtotal_cents', total, 'vat_included', true);
+end $$;
+
+-- Source: 202610260026_campanha_no_orcamento.sql
+-- A campanha em vigor entra no orçamento.
+-- Não acumula com o código de desconto: aplica-se o maior dos dois. Acumular
+-- dá descontos que ninguém tencionou, e é mais fácil de explicar assim.
+
+create or replace function public.quote_irs_checkout(account uuid, process uuid, coupon text default '')
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  quote jsonb;
+  discount public.discount_codes;
+  campanha public.campaigns;
+  reduction integer := 0;
+  pela_campanha integer := 0;
+  total integer;
+  used integer;
+  billing public.profiles;
+  rotulo text;
+begin
+  quote := public.price_irs_case(account, process);
+  total := (quote->>'subtotal_cents')::integer;
+
+  select p.* into strict billing
+    from public.profiles p
+    join public.account_access a on a.user_id = p.id
+   where a.account_id = account and a.role = 'owner';
+
+  if billing.irs_free then
+    return quote || jsonb_build_object(
+      'discount_id', null, 'discount_code', 'CLIENTE GRATUITO',
+      'discount_cents', total, 'total_cents', 0);
+  end if;
+
+  if billing.forced_discount_id is not null then
+    select code into coupon from public.discount_codes where id = billing.forced_discount_id;
+    if coupon is null then raise exception 'Required discount unavailable'; end if;
+  end if;
+
+  if btrim(coalesce(coupon, '')) <> '' then
+    select * into discount from public.discount_codes where code = upper(btrim(coupon));
+    if not found then raise exception 'Discount unavailable' using errcode = '22023'; end if;
+    select count(*) into used from public.irs_checkouts
+      where discount_id = discount.id and state in ('creating','pending','unknown','paid');
+    if not discount.active
+       or (discount.allowed_user is not null and discount.allowed_user <> billing.id)
+       or (discount.starts_at is not null and discount.starts_at > now())
+       or (discount.ends_at is not null and discount.ends_at <= now())
+       or (discount.max_uses is not null and used >= discount.max_uses) then
+      raise exception 'Discount unavailable' using errcode = '22023';
+    end if;
+    reduction := least(total, case when discount.kind = 'fixed' then discount.value
+                                   else ((total::bigint * discount.value + 5000) / 10000)::integer end);
+    rotulo := discount.code;
+  end if;
+
+  campanha := public.campanha_em_vigor();
+  if campanha.id is not null then
+    pela_campanha := least(total, case when campanha.tipo = 'fixo' then campanha.valor
+                                       else ((total::bigint * campanha.valor + 50) / 100)::integer end);
+    if pela_campanha > reduction then
+      reduction := pela_campanha;
+      rotulo := campanha.rotulo_publico;
+      discount := null;
+    end if;
+  end if;
+
+  return quote || jsonb_build_object(
+    'discount_id', discount.id,
+    'discount_code', rotulo,
+    'discount_cents', reduction,
+    'total_cents', total - reduction,
+    'campanha', case when campanha.id is not null
+                     then jsonb_build_object('rotulo', campanha.rotulo_publico) end);
+end $$;
+
+-- Source: 202610260027_email_ja_registado.sql
+-- O Supabase não diz se um email já existe — protege contra enumeração de
+-- contas. O efeito colateral é que o registo repetido parece correr bem e o
+-- email de confirmação nunca chega.
+--
+-- Esta função diz apenas se o endereço já tem conta. Não devolve o
+-- utilizador nem o estado dele. Só a chave de serviço lhe chega: sem GRANT
+-- para anon ou authenticated, ninguém a pode usar para varrer endereços.
+
+create or replace function public.email_ja_registado(endereco text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists(
+    select 1 from auth.users
+     where lower(email) = lower(btrim(endereco))
+       and deleted_at is null
+  )
+$$;
+
+revoke all on function public.email_ja_registado(text) from public, anon, authenticated;
+
 commit;
 select 'Instalacao concluida: estrutura IRS e Gestao criada.' as resultado;

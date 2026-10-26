@@ -13,12 +13,16 @@ const CLIENTES: Modulo[] = [
 ];
 
 const COMERCIAL: Modulo[] = [
-  { href: '/descontos', nome: 'Códigos de desconto', numero: '04' },
-  { href: '/faturacao', nome: 'Faturação', numero: '05' },
-  { href: '/pagamentos', nome: 'Pagamentos', numero: '06' },
+  { href: '/precos', nome: 'Preços e campanhas', numero: '04' },
+  { href: '/descontos', nome: 'Códigos de desconto', numero: '05' },
+  { href: '/faturacao', nome: 'Faturação', numero: '06' },
+  { href: '/pagamentos', nome: 'Pagamentos', numero: '07' },
 ];
 
-const SISTEMA: Modulo[] = [{ href: '/configuracao', nome: 'Configurações', numero: '07' }];
+const SISTEMA: Modulo[] = [
+  { href: '/avisos', nome: 'Avisos', numero: '08' },
+  { href: '/configuracao', nome: 'Configurações', numero: '09' },
+];
 
 export function Navegacao({ irs }: { irs: string | null }) {
   const caminho = usePathname();
