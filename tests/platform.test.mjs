@@ -117,9 +117,13 @@ test('production registration, administration, quotations, checkout and private 
    const c=await newCase();await income(c,'employment');
    const attempt=(await db.query("select public.begin_irs_checkout($1,$2,'') as data",[a,c])).rows[0].data;
    assert.equal((await db.query("select public.begin_irs_checkout($1,$2,'') as data",[a,c])).rows[0].data.id,attempt.id);
-   await assert.rejects(income(c,'independent'));await assert.rejects(db.query('select public.submit_case($1,$2)',[a,c]));
-   await actor(ids.staff);await assert.rejects(income(c,'independent'));
+   await assert.rejects(db.query('select public.submit_case($1,$2)',[a,c]));
    await actor(ids.staff,'service_role');await db.query('select public.attach_revolut_order($1,$2,$3)',[attempt.id,'provider-order-1','https://checkout.revolut.com/pay/order']);
+   // O congelamento começa quando há uma ordem aberta no fornecedor (pending):
+   // uma tentativa que ficou a meio da criação já não tranca o processo.
+   await actor(ids.a);await assert.rejects(income(c,'independent'));
+   await actor(ids.staff);await assert.rejects(income(c,'independent'));
+   await actor(ids.staff,'service_role');
    await assert.rejects(db.query('select public.finish_revolut_order($1,$2,$3,$4,1,$5)',[attempt.id,'provider-order-1',attempt.id,'COMPLETED','EUR']));
    await assert.rejects(db.query('select public.finish_revolut_order($1,$2,$3,$4,1850,$5)',[attempt.id,'provider-order-1','wrong-reference','COMPLETED','EUR']));
    for(let i=0;i<2;i++)await db.query('select public.finish_revolut_order($1,$2,$3,$4,1850,$5)',[attempt.id,'provider-order-1',attempt.id,'COMPLETED','EUR']);

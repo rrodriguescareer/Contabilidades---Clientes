@@ -3770,5 +3770,341 @@ grant execute on function
   public.espaco_progresso(uuid)
 to authenticated;
 
+-- Source: 202610280036_pagamento_sem_bloqueios_presos.sql
+-- Uma tentativa de pagamento que falhava antes de chegar ao Stripe ficava em
+-- "creating" para sempre — e o can_edit_case trancava o processo inteiro
+-- enquanto houvesse uma: o cliente deixava de conseguir acrescentar membros,
+-- guardar senhas ou rendimentos. Era essa a origem de metade dos "dá erro".
+--
+-- 1. "creating" deixa de trancar: é um estado de segundos, não um pagamento.
+-- 2. Uma tentativa "creating" com mais de 15 minutos é abandonada (cancelled)
+--    quando o cliente volta a pagar, em vez de ser devolvida outra vez.
+-- 3. O pagamento confirmado também submete um processo devolvido.
+
+create or replace function public.can_edit_case(account uuid, caseid uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select public.is_staff() or (
+    public.can_read_account(account)
+    and exists(select 1 from public.irs_cases c
+                where c.id = caseid and c.account_id = account
+                  and c.status in ('collecting','returned'))
+    and not exists(select 1 from public.irs_checkouts p
+                    where p.case_id = caseid and p.state in ('pending','unknown')))
+$$;
+
+-- O gatilho da recolha repetia a mesma regra com "creating" lá dentro.
+create or replace function public.guard_case_collection()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare target_case uuid; target_account uuid;
+begin
+  if tg_op = 'DELETE' then target_case := old.case_id; target_account := old.account_id;
+  else target_case := new.case_id; target_account := new.account_id; end if;
+  perform 1 from public.irs_cases c where c.id = target_case and c.account_id = target_account for update;
+  if not public.can_edit_case(target_account, target_case) then
+    raise exception 'Collection locked' using errcode = '42501';
+  end if;
+  if tg_op = 'DELETE' then return old; end if;
+  return new;
+end $$;
+
+create or replace function public.begin_irs_checkout(
+  account uuid, process uuid, coupon text default '', expected_total integer default null)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare quote jsonb; attempt public.irs_checkouts;
+begin
+  if not public.can_read_account(account) or not exists(
+       select 1 from public.account_access a
+        where a.account_id = account and a.user_id = auth.uid()
+          and a.role = 'owner' and a.active and a.irs) then
+    raise exception 'Not authorized' using errcode = '42501';
+  end if;
+  perform 1 from public.irs_cases c where c.id = process and c.account_id = account for update;
+  if not found then raise exception 'Process unavailable'; end if;
+
+  -- Tentativas presas a meio da criação: abandonadas.
+  update public.irs_checkouts set state = 'cancelled'
+   where case_id = process and state = 'creating' and created_at < now() - interval '15 minutes';
+
+  select * into attempt from public.irs_checkouts
+   where case_id = process and state in ('creating','pending','unknown','paid')
+   order by created_at desc limit 1;
+  if found then
+    return jsonb_build_object('id', attempt.id, 'state', attempt.state,
+      'checkout_url', attempt.checkout_url, 'sessao', attempt.provider_order_id,
+      'created', false, 'amount_cents', attempt.amount_cents);
+  end if;
+
+  if not exists(select 1 from public.irs_cases c where c.id = process and c.status in ('collecting','returned')) then
+    raise exception 'Case is not collecting';
+  end if;
+  if not exists(select 1 from public.case_people where case_id = process and relationship = 'titular') then
+    raise exception 'Holder missing';
+  end if;
+  if exists(select 1 from public.documents where case_id = process and state = 'pending') then
+    raise exception 'Finish pending uploads first';
+  end if;
+
+  perform 1 from public.discount_codes d
+   where d.code = upper(btrim(coalesce(coupon,'')))
+      or d.id = (select p.forced_discount_id from public.profiles p where p.id = auth.uid())
+   order by d.id for update;
+  quote := public.quote_irs_checkout(account, process, coupon);
+  if expected_total is not null and expected_total <> (quote->>'total_cents')::integer then
+    raise exception 'Price changed. Review the quote again.' using errcode = '22023';
+  end if;
+
+  insert into public.irs_checkouts(account_id, case_id, user_id, quote, amount_cents, discount_id, discount_cents)
+  values (account, process, auth.uid(), quote, (quote->>'total_cents')::integer,
+          (quote->>'discount_id')::uuid, (quote->>'discount_cents')::integer)
+  returning * into attempt;
+
+  if attempt.amount_cents = 0 then
+    update public.irs_checkouts set state = 'paid', paid_at = now() where id = attempt.id;
+    update public.irs_cases set status = 'submitted_by_client',
+           submitted_by_client_at = coalesce(submitted_by_client_at, now())
+     where id = process;
+    insert into public.progress_events(account_id, case_id, author_id, title, body)
+    values (account, process, auth.uid(), 'Processo submetido',
+            'Processo enviado para revisão com desconto integral. Não representa submissão à AT.');
+  end if;
+
+  return jsonb_build_object('id', attempt.id,
+    'state', case when attempt.amount_cents = 0 then 'paid' else 'creating' end,
+    'created', true, 'amount_cents', attempt.amount_cents);
+end $$;
+
+create or replace function public.finalizar_pagamento_stripe(
+  attempt uuid, provider_id text, provider_reference text, pago boolean, falhou boolean,
+  provider_amount integer, provider_currency text)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare payment public.irs_checkouts;
+begin
+  select * into strict payment from public.irs_checkouts where id = attempt for update;
+
+  if payment.provider_order_id is distinct from provider_id
+     or payment.id::text is distinct from provider_reference
+     or payment.amount_cents is distinct from provider_amount
+     or lower(provider_currency) is distinct from 'eur' then
+    raise exception 'Order mismatch';
+  end if;
+
+  if payment.state = 'paid' then return; end if;
+  if payment.state not in ('pending','unknown') then raise exception 'Invalid payment state'; end if;
+
+  update public.irs_checkouts set last_checked_at = now() where id = attempt;
+
+  if pago then
+    update public.irs_checkouts set state = 'paid', paid_at = now() where id = attempt;
+    update public.irs_cases set status = 'submitted_by_client',
+           submitted_by_client_at = coalesce(submitted_by_client_at, now())
+     where id = payment.case_id and status in ('collecting','returned');
+    insert into public.progress_events(account_id, case_id, author_id, title, body)
+      values (payment.account_id, payment.case_id, payment.user_id,
+              'Processo submetido',
+              'Pagamento confirmado. O processo entrou na minha fila para revisão. A declaração ainda não foi submetida à AT.');
+  elsif falhou then
+    update public.irs_checkouts set state = 'failed' where id = attempt;
+  end if;
+end $$;
+
+-- O cliente desiste de um pagamento aberto (para corrigir dados, por exemplo).
+-- Só o dono, e só enquanto não está pago.
+create or replace function public.cancelar_pagamento_aberto(attempt uuid)
+returns text
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare payment public.irs_checkouts;
+begin
+  select * into payment from public.irs_checkouts where id = attempt for update;
+  if not found or payment.user_id is distinct from auth.uid() then
+    raise exception 'Not authorized' using errcode = '42501';
+  end if;
+  if payment.state not in ('creating','pending') then return payment.state; end if;
+  update public.irs_checkouts set state = 'cancelled' where id = attempt;
+  return payment.provider_order_id;
+end $$;
+
+revoke all on function public.cancelar_pagamento_aberto(uuid) from public, anon;
+grant execute on function public.cancelar_pagamento_aberto(uuid) to authenticated;
+
+-- A tentativa que ficou presa a 27/10 e trancava o processo de ensaio.
+update public.irs_checkouts set state = 'cancelled'
+ where state = 'creating' and created_at < now() - interval '15 minutes';
+
+-- Source: 202610280037_membro_e_senha_juntos.sql
+-- O membro do agregado e a sua senha das Finanças passam a ser gravados na
+-- mesma transação. Antes eram duas chamadas: se a segunda falhasse, o membro
+-- ficava sem senha e o cliente via um erro a meio. A senha tem de ser indicada
+-- ao criar o membro — é a regra do gabinete — e pode ser substituída depois.
+--
+-- O id de um membro novo vem de fora (p_id_novo) porque a senha é cifrada no
+-- servidor da aplicação com o id da pessoa no AAD, antes de chegar aqui.
+
+drop function if exists public.guardar_membro_agregado(uuid, text, text, text, uuid, date, boolean);
+
+create or replace function public.guardar_membro_agregado(
+  processo uuid, p_nome text, p_nif text, p_relacao text,
+  p_pessoa uuid default null, p_nascimento date default null,
+  p_dois_fatores boolean default false,
+  p_id_novo uuid default null, p_cifrada text default null)
+returns uuid
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  conta uuid;
+  destino uuid;
+begin
+  select account_id into conta from public.irs_cases where id = processo;
+  if conta is null or not public.can_edit_case(conta, processo) then
+    raise exception 'O processo não pode ser alterado neste momento.' using errcode = '42501';
+  end if;
+  if p_nome is null or length(btrim(p_nome)) < 2 then
+    raise exception 'Indique o nome completo.' using errcode = '22023';
+  end if;
+  if p_nif !~ '^[0-9]{9}$' then
+    raise exception 'O NIF tem nove dígitos.' using errcode = '22023';
+  end if;
+  if p_nascimento is null then
+    raise exception 'Indique a data de nascimento.' using errcode = '22023';
+  end if;
+  if p_nascimento > current_date then
+    raise exception 'A data de nascimento não pode ser no futuro.' using errcode = '22023';
+  end if;
+  if p_relacao not in ('titular','conjuge','descendente','ascendente','outro') then
+    raise exception 'Escolha a relação de parentesco.' using errcode = '22023';
+  end if;
+
+  if p_pessoa is null then
+    if p_cifrada is null or p_id_novo is null then
+      raise exception 'Indique a senha do Portal das Finanças desta pessoa.' using errcode = '22023';
+    end if;
+    if exists(select 1 from public.case_people cp join public.people p on p.id = cp.person_id
+               where cp.case_id = processo and p.nif = p_nif) then
+      raise exception 'Já existe alguém com este NIF no agregado.' using errcode = '23505';
+    end if;
+    insert into public.people(id, account_id, full_name, birth_date, nif, tax_two_factor)
+      values (p_id_novo, conta, btrim(p_nome), p_nascimento, p_nif, p_dois_fatores)
+      returning id into destino;
+  else
+    update public.people
+       set full_name = btrim(p_nome), birth_date = p_nascimento,
+           nif = p_nif, tax_two_factor = p_dois_fatores
+     where id = p_pessoa and account_id = conta
+     returning id into destino;
+    if destino is null then
+      raise exception 'Membro não encontrado nesta conta.' using errcode = '22023';
+    end if;
+    if p_cifrada is null and not exists(select 1 from public.tax_credentials where person_id = destino) then
+      raise exception 'Indique a senha do Portal das Finanças desta pessoa.' using errcode = '22023';
+    end if;
+  end if;
+
+  insert into public.case_people(account_id, case_id, person_id, relationship)
+    values (conta, processo, destino, p_relacao)
+    on conflict (case_id, person_id) do update set relationship = excluded.relationship;
+
+  if p_cifrada is not null then
+    insert into public.tax_credentials(person_id, account_id, encrypted_password, updated_at, updated_by)
+      values (destino, conta, p_cifrada, now(), auth.uid())
+    on conflict (person_id) do update
+      set encrypted_password = excluded.encrypted_password,
+          updated_at = now(), updated_by = excluded.updated_by;
+  end if;
+
+  return destino;
+end $$;
+
+revoke all on function public.guardar_membro_agregado(uuid,text,text,text,uuid,date,boolean,uuid,text) from public, anon;
+grant execute on function public.guardar_membro_agregado(uuid,text,text,text,uuid,date,boolean,uuid,text) to authenticated;
+
+-- O titular da minha conta, para a senha do onboarding. Sem RLS pelo meio:
+-- no próprio pedido em que o perfil acabou de ser criado, a leitura através
+-- das políticas era o elo frágil.
+create or replace function public.meu_titular()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select jsonb_build_object('processo', c.id, 'pessoa', cp.person_id)
+    from public.account_access a
+    join public.irs_cases c on c.account_id = a.account_id
+    join public.case_people cp on cp.case_id = c.id and cp.relationship = 'titular'
+   where a.user_id = auth.uid() and a.role = 'owner' and a.active
+   order by c.tax_year desc
+   limit 1
+$$;
+
+revoke all on function public.meu_titular() from public, anon;
+grant execute on function public.meu_titular() to authenticated;
+revoke all on function public.guardar_senha_financas(uuid,uuid,text) from public, anon;
+grant execute on function public.guardar_senha_financas(uuid,uuid,text) to authenticated;
+
+-- Source: 202610280038_cancelar_tentativa.sql
+-- Fecha uma tentativa de pagamento que o servidor não conseguiu abrir no
+-- Stripe (ou cuja sessão expirou), para a seguinte começar limpa. Só a chave
+-- de serviço: é o servidor que decide, depois de falar com o Stripe.
+
+create or replace function public.cancelar_tentativa_de_pagamento(attempt uuid)
+returns void
+language sql
+security definer
+set search_path = ''
+as $$
+  update public.irs_checkouts set state = 'cancelled'
+   where id = attempt and state in ('creating','pending','unknown');
+$$;
+
+revoke all on function public.cancelar_tentativa_de_pagamento(uuid) from public, anon, authenticated;
+grant execute on function public.cancelar_tentativa_de_pagamento(uuid) to service_role;
+
+-- Source: 202610280039_congelar_so_com_ordem_aberta.sql
+-- Com uma ordem aberta no fornecedor (pending/unknown), o processo fica
+-- congelado para todos — também para o gabinete: o valor já foi apresentado
+-- ao cliente e não pode mudar debaixo dele. Uma tentativa ainda em "creating"
+-- não congela nada.
+
+create or replace function public.guard_case_collection()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare target_case uuid; target_account uuid;
+begin
+  if tg_op = 'DELETE' then target_case := old.case_id; target_account := old.account_id;
+  else target_case := new.case_id; target_account := new.account_id; end if;
+  perform 1 from public.irs_cases c where c.id = target_case and c.account_id = target_account for update;
+  if not public.can_edit_case(target_account, target_case)
+     or exists(select 1 from public.irs_checkouts p
+                where p.case_id = target_case and p.state in ('pending','unknown')) then
+    raise exception 'Collection locked' using errcode = '42501';
+  end if;
+  if tg_op = 'DELETE' then return old; end if;
+  return new;
+end $$;
+
 commit;
 select 'Instalacao concluida: estrutura IRS e Gestao criada.' as resultado;
