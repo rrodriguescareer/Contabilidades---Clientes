@@ -105,7 +105,7 @@ test('shared schema, database constraints and tenant isolation',async t=>{
    await assert.rejects(db.query("insert into public.income_records(account_id,case_id,category,person_id,title,mode) values($1,$2,'employment',$3,'Locked','documents')",[a,ca,pa]));
    await db.query('insert into public.messages(account_id,case_id,body) values($1,$2,$3)',[a,ca,'Clarification while under review']);
    await actor(ids.staff);await assert.rejects(db.query('select public.publish_case_progress($1,$2,$3,$4,$5)',[a,ca,'Bad update','Body','invalid']));assert.equal((await db.query('select * from public.progress_events')).rows.length,0);
-   await db.query('select public.publish_case_progress($1,$2,$3,$4,$5)',[a,ca,'Reopened','Please complete documents','collecting']);await actor(ids.a);assert.equal((await db.query('select * from public.progress_events')).rows.length,1);
+   await assert.rejects(db.query('select public.publish_case_progress($1,$2,$3,$4,$5)',[a,ca,'Reopened','Please complete documents','collecting']));await db.query('select public.publish_case_progress($1,$2,$3,$4,$5)',[a,ca,'Returned','Please complete documents','returned']);assert.equal((await db.query('select status from public.irs_cases where id=$1',[ca])).rows[0].status,'returned');await actor(ids.a);assert.equal((await db.query('select * from public.progress_events')).rows.length,1);
   });
   await t.test('invitation requests do not create broad family access',async()=>{
    await actor(ids.a);await db.query('insert into public.invitation_requests(account_id,person_id,email) values($1,$2,$3)',[a,person,'member@example.com']);
