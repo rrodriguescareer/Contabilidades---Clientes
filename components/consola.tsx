@@ -1,16 +1,44 @@
 import Link from 'next/link';
+import { Suspense } from 'react';
+import { contagensDoGabinete } from '@/lib/irs-actions';
+import { Chegada } from './chegada';
 import { signOut } from '@/lib/auth-actions';
 import { Navegacao } from './navegacao';
 import { Titulo } from './titulo';
 import e from './consola.module.css';
 
-/** Endereço público da plataforma de IRS, para a ligação ao gabinete. */
-function enderecoIrs() {
-  const valor = process.env.NEXT_PUBLIC_IRS_URL || '';
-  return /^https:\/\//.test(valor) ? valor.replace(/\/$/, '') : null;
+/* O menu lateral, desenhado uma vez. Serve as páginas da gestão e o gabinete
+   do IRS, que tem o seu próprio topo (o nome do cliente, o voltar). */
+export async function Lateral({ email, administrador }: { email: string; administrador: boolean }) {
+  const contagens = await contagensDoGabinete().catch(() => ({}));
+  return (
+    <aside className={e.lateral}>
+      <Link href="/irs" className={e.marca}>
+        <img src="/rr.svg" alt="RR." width={259} height={142} />
+        <span className={e.modo}>Gabinete</span>
+      </Link>
+
+      <Suspense fallback={null}>
+        <Navegacao contagens={contagens} />
+      </Suspense>
+
+      <div className={e.rodapeLateral}>
+        <div className={e.eu}>
+          <span className={e.avatar}>RM</span>
+          <div>
+            <strong>{administrador ? 'Rúben Meirinho Rodrigues' : 'Contabilista Certificado'}</strong>
+            <span>{email}</span>
+          </div>
+        </div>
+        <form action={signOut}>
+          <button className={e.sair}>Sair</button>
+        </form>
+      </div>
+    </aside>
+  );
 }
 
-/* Desenhada uma vez no layout: ao navegar entre módulos só o conteúdo muda. */
+/* As páginas da gestão: menu, topo com o título e o conteúdo. */
 export function Consola({
   email,
   administrador,
@@ -22,28 +50,8 @@ export function Consola({
 }) {
   return (
     <div className={e.consola}>
-      <aside className={e.lateral}>
-        <Link href="/app" className={e.marca}>
-          <img src="/rr.svg" alt="RR." width={259} height={142} />
-          <span className={e.modo}>Gestão</span>
-        </Link>
-
-        <Navegacao irs={enderecoIrs()} />
-
-        <div className={e.rodapeLateral}>
-          <div className={e.eu}>
-            <span className={e.avatar}>{iniciais(email)}</span>
-            <div>
-              <strong>{administrador ? 'Administrador' : 'Contabilista Certificado'}</strong>
-              <span>{email}</span>
-            </div>
-          </div>
-          <form action={signOut}>
-            <button className={e.sair}>Sair</button>
-          </form>
-        </div>
-      </aside>
-
+      <Chegada />
+      <Lateral email={email} administrador={administrador} />
       <div className={e.corpo}>
         <header className={e.topo}>
           <Titulo />
@@ -55,8 +63,6 @@ export function Consola({
     </div>
   );
 }
-
-const iniciais = (email: string) => (email.split('@')[0] || '?').slice(0, 2).toUpperCase();
 
 export function Avisos({ erro, mensagem }: { erro?: string; mensagem?: string }) {
   return (

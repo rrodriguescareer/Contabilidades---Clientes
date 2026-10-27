@@ -1,2 +1,3 @@
 import { redirect } from 'next/navigation';
-export default function Page(){redirect('/app');}
+// O dia começa nos processos do IRS.
+export default function Page(){redirect('/irs');}

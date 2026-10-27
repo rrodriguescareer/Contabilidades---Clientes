@@ -20,7 +20,11 @@ export async function signIn(form:FormData){
  // aplicação: '//exemplo.pt' sairia daqui para fora.
  const pedido=text(form,'destino');
  const interno=/^\/(?!\/)/.test(pedido)?pedido:'';
- redirect(interno||'/app');
+ // Sinal de 30 segundos para a transição de entrada; não leva nada pessoal.
+ const {cookies}=await import('next/headers');
+ (await cookies()).set('rr_chegada','1',{maxAge:30,path:'/',sameSite:'lax',httpOnly:false,secure:process.env.NODE_ENV==='production'});
+ // O dia começa nos processos do IRS.
+ redirect(interno||'/irs');
 }
 export async function signUp(form: FormData) {
   if (IS_MANAGEMENT) error('O registo de profissionais é feito pela administração.');

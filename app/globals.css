@@ -347,3 +347,269 @@
   .grelha, .colunas { align-items: stretch; }
   .grelha > *, .colunas > * { min-inline-size: 0; }
 }
+
+/* ------------------------------------------- o gabinete do IRS, aqui dentro */
+/* Vieram da plataforma do IRS com a consola do contabilista: a régua das
+   fases, a prontidão, o percurso, a conversa, a tabela de preço e a entrada
+   depois do login. Mantêm os mesmos nomes para os componentes não mudarem. */
+@layer components {
+  .btn-texto {
+    background: none;
+    border: 0;
+    padding: .5rem .2rem;
+    color: var(--texto-suave);
+    font: inherit;
+    font-size: .85rem;
+    font-weight: 650;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  .btn-texto:hover { color: #b4332f; }
+  /* Os avisos da consola do IRS vêm sem a classe base "aviso". */
+  .aviso-positivo:not(.aviso), .aviso-critico:not(.aviso), .aviso-atencao:not(.aviso) {
+    margin: 0; padding: .6rem .85rem; border-radius: .6rem; border: 1px solid; font-size: var(--t-sm);
+  }
+}
+
+/* O fluxo do processo: a régua das fases, a prontidão e o percurso. Serve as
+   duas óticas — o cliente vê-o em Acompanhamento, eu vejo-o dentro do processo
+   — e por isso vive aqui e não num módulo. */
+@layer components {
+  /* O cabeçalho do estado: de quem se espera, onde está, desde quando. */
+  .cabeca-estado { display: grid; gap: var(--e-2); }
+  .cabeca-estado h2 { margin: 0; font-size: var(--t-xl); }
+  .cabeca-estado > p { margin: 0; font-size: var(--t-base); color: var(--texto-suave); }
+
+  .selo-espera {
+    justify-self: start;
+    display: inline-flex; align-items: center; gap: .4rem;
+    padding: .25rem .65rem;
+    border-radius: var(--r-pill, 999px);
+    font-size: var(--t-xs); font-weight: 700; letter-spacing: .01em;
+    background: var(--acao-suave); color: var(--acao-forte);
+    border: 1px solid color-mix(in srgb, var(--acao) 22%, transparent);
+  }
+  .selo-espera::before {
+    content: ''; inline-size: .45rem; block-size: .45rem;
+    border-radius: 999px; background: currentColor;
+  }
+  .selo-espera[data-espera='cliente'] {
+    background: var(--atencao-suave); color: #7A4D05;
+    border-color: color-mix(in srgb, var(--atencao) 28%, transparent);
+  }
+  .selo-espera[data-espera='at'] {
+    background: var(--superficie-afundada); color: var(--tinta-600);
+    border-color: var(--linha-forte);
+  }
+  .selo-espera[data-espera='ninguem'] {
+    background: var(--positivo-suave); color: #0A5C47;
+    border-color: color-mix(in srgb, var(--positivo) 25%, transparent);
+  }
+
+  /* As quatro fases. Colunas iguais, alturas iguais: é o nível do processo,
+     não o passo. */
+  .fases {
+    list-style: none; margin: 0; padding: 0;
+    display: grid; gap: var(--e-2);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .fases li {
+    display: grid; gap: .15rem; align-content: start;
+    padding: .7rem .8rem;
+    border-radius: .7rem;
+    background: var(--superficie-2);
+    border: 1px solid var(--linha);
+    border-block-start: 3px solid var(--linha-forte);
+  }
+  .fases strong { font-size: var(--t-sm); }
+  .fases span { font-size: var(--t-xs); color: var(--texto-suave); line-height: 1.35; }
+  .fases li[data-estado='feito'] {
+    border-block-start-color: var(--acao);
+    background: var(--acao-suave);
+  }
+  .fases li[data-estado='feito'] strong { color: var(--acao-forte); }
+  .fases li[data-estado='atual'] {
+    border-block-start-color: var(--acao);
+    background: var(--superficie);
+    box-shadow: 0 0 0 1px var(--acao) inset, var(--sombra-1, 0 1px 2px #0a234412);
+  }
+  .fases li[data-estado='por-vir'] { opacity: .62; }
+  .fases-compactas span { display: none; }
+  .fases-compactas li { padding: .5rem .7rem; }
+
+  .regua-passo { margin: 0; font-size: var(--t-sm); color: var(--texto-suave); }
+
+  /* A prontidão: a mesma lista nas duas óticas. */
+  .prontidao { list-style: none; margin: 0; padding: 0; display: grid; gap: .1rem; }
+  .prontidao li {
+    display: grid; grid-template-columns: 1.1rem 1fr; gap: .7rem;
+    align-items: start;
+    padding: .55rem 0;
+    border-block-start: 1px solid var(--linha);
+  }
+  .prontidao li:first-child { border-block-start: 0; }
+  .prontidao strong { font-size: var(--t-base); font-weight: 650; }
+  .prontidao p { margin: .1rem 0 0; font-size: var(--t-sm); }
+  .marca-pronto {
+    inline-size: 1.1rem; block-size: 1.1rem; margin-block-start: .15rem;
+    border-radius: 999px; display: grid; place-items: center;
+    font-size: .68rem; font-weight: 900; color: #fff;
+    background: var(--positivo);
+  }
+  .marca-pronto::before { content: '\2713'; }
+  .prontidao li[data-estado='falta'] .marca-pronto { background: var(--critico); }
+  .prontidao li[data-estado='falta'] .marca-pronto::before { content: '\2715'; }
+  .prontidao li[data-estado='atencao'] .marca-pronto { background: var(--atencao); }
+  .prontidao li[data-estado='atencao'] .marca-pronto::before { content: '!'; }
+  .prontidao-compacta strong { font-size: var(--t-sm); }
+
+  /* O percurso: o que aconteceu (eventos reais) e o que falta acontecer. */
+  .percurso { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+  .percurso li {
+    display: grid;
+    grid-template-columns: 1.6rem 1fr;
+    gap: .8rem;
+    padding-block-end: var(--e-4);
+    position: relative;
+  }
+  .percurso li:last-child { padding-block-end: 0; }
+  /* A linha que liga os passos não desce do último. */
+  .percurso li:not(:last-child)::before {
+    content: '';
+    position: absolute;
+    inset-inline-start: .72rem;
+    inset-block: 1.3rem 0;
+    inline-size: 2px;
+    background: var(--linha);
+  }
+  .marca-passo {
+    inline-size: 1.05rem;
+    block-size: 1.05rem;
+    border-radius: 999px;
+    border: 2px solid var(--linha-forte);
+    background: var(--superficie);
+    margin-block-start: .22rem;
+    z-index: 1;
+  }
+  .percurso li[data-estado='feito'] .marca-passo { background: var(--acao); border-color: var(--acao); }
+  .percurso li[data-estado='atual'] .marca-passo {
+    border-color: var(--acao);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--acao) 16%, transparent);
+  }
+  .percurso li[data-estado='atual'] strong { color: var(--acao-forte); }
+  .percurso li[data-estado='por-vir'] .marca-passo { border-style: dashed; }
+  .percurso li[data-estado='por-vir'] strong,
+  .percurso li[data-estado='por-vir'] p { color: var(--texto-ténue); }
+  .percurso li[data-estado='atual'] > div {
+    background: var(--acao-suave);
+    border-radius: .6rem;
+    padding: .5rem .7rem;
+    margin-block-start: -.35rem;
+  }
+  /* Uma devolução ou uma divergência não é um passo como os outros. */
+  .percurso li[data-tom='desvio'] .marca-passo { background: var(--atencao); border-color: var(--atencao); }
+  .percurso li[data-tom='desvio'] strong { color: #7A4D05; }
+  .percurso li[data-estado='atual'][data-tom='desvio'] > div { background: var(--atencao-suave); }
+  .percurso li[data-estado='atual'][data-tom='desvio'] .marca-passo {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--atencao) 18%, transparent);
+  }
+  .percurso strong { font-size: var(--t-base); font-weight: 650; }
+  .percurso p { margin: .15rem 0 0; font-size: var(--t-sm); color: var(--texto-suave); }
+
+  /* Campos lado a lado que ficam alinhados mesmo com rótulos de alturas
+     diferentes — era uma das coisas que estava torta. */
+  .grelha-campos {
+    display: grid; gap: var(--e-3);
+    grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+    align-items: end;
+  }
+
+  /* As ações: o passo seguinte em destaque, os desvios e recuos à parte. */
+  .acoes-fluxo {
+    display: flex; flex-wrap: wrap; align-items: center; gap: var(--e-3);
+    padding-block-start: var(--e-3);
+    border-block-start: 1px solid var(--linha);
+  }
+  .acoes-outras {
+    display: flex; flex-wrap: wrap; align-items: center; gap: var(--e-4);
+    margin-inline-start: auto;
+  }
+  .btn-desvio { color: var(--atencao); }
+  .btn-desvio:hover { color: #7A4D05; }
+
+  @media (max-width: 640px) {
+    .fases { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .acoes-outras { margin-inline-start: 0; }
+  }
+}
+
+
+/* A conversa e a tabela de preço. */
+@layer components {
+  .conversa { display: grid; gap: .6rem; max-block-size: 26rem; overflow-y: auto; padding: .2rem; }
+  .balao {
+    justify-self: start;
+    max-inline-size: 85%;
+    background: #eef3fb;
+    border-radius: .9rem .9rem .9rem .2rem;
+    padding: .7rem .9rem;
+  }
+  .balao[data-meu='true'] {
+    justify-self: end;
+    background: #0a2344;
+    color: #fff;
+    border-radius: .9rem .9rem .2rem .9rem;
+  }
+  .balao[data-meu='true'] .suave { color: #9db2d1; }
+  .balao p { margin: 0 0 .25rem; font-size: .9rem; white-space: pre-wrap; }
+  .balao span { font-size: .72rem; }
+
+  .tabela-preco { inline-size: 100%; border-collapse: collapse; font-size: .9rem; }
+  .tabela-preco td { padding: .5rem 0; border-top: 1px solid #eef3fb; }
+  .tabela-preco td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+  .tabela-preco tr:first-child td { border-top: 0; }
+  .tabela-preco .desconto td { color: #1f7a4d; }
+  .tabela-preco .total td { font-weight: 800; border-top: 2px solid #0a2344; }
+}
+
+
+/* A transição depois do login: a marca entra, cumprimenta, e a cortina sobe
+   para revelar o painel que já está carregado por baixo. */
+@layer components {
+  .chegada {
+    position: fixed; inset: 0; z-index: 200;
+    display: grid; place-items: center;
+    background: radial-gradient(120% 90% at 50% 30%, #143257 0%, #0A2344 55%, #06172E 100%);
+    color: #fff;
+    animation: chegada-cortina .75s cubic-bezier(.7,0,.2,1) forwards paused;
+  }
+  .chegada[data-fase='sair'] { animation-play-state: running; }
+  .chegada-centro { display: grid; justify-items: center; gap: 1.1rem; }
+  .chegada-marca {
+    inline-size: clamp(7rem, 22vw, 10rem); block-size: auto;
+    animation: chegada-marca .7s cubic-bezier(.2,.9,.25,1.15) both;
+  }
+  .chegada-texto {
+    margin: 0; font-family: var(--fonte-titulo); font-weight: 700;
+    font-size: clamp(1.25rem, 3.4vw, 1.75rem); letter-spacing: -.01em;
+    animation: chegada-texto .55s ease-out .35s both;
+  }
+  .chegada-barra {
+    display: block; inline-size: 9rem; block-size: 3px; border-radius: 999px;
+    background: linear-gradient(90deg, #2867F8, #7FA8FF);
+    transform-origin: left center;
+    animation: chegada-barra .8s cubic-bezier(.6,0,.2,1) .3s both;
+  }
+  @keyframes chegada-marca { from { opacity: 0; transform: scale(.82) translateY(8px); } to { opacity: 1; transform: none; } }
+  @keyframes chegada-texto { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  @keyframes chegada-barra { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+  @keyframes chegada-cortina {
+    from { clip-path: inset(0 0 0 0); }
+    to { clip-path: inset(0 0 100% 0); }
+  }
+}
+
+@layer components {
+  .btn-pequeno { padding: .38rem .8rem; font-size: var(--t-sm); }
+}
+

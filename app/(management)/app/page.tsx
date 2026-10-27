@@ -12,7 +12,7 @@ const MODULOS = [
   { href: '/precos', titulo: 'Preços e campanhas', nota: 'Política de preços do IRS e campanhas com datas.', icone: 'etiqueta' },
   { href: '/descontos', titulo: 'Códigos de desconto', nota: 'Códigos, destinatários, validade e limites de utilização.', icone: 'percentagem' },
   { href: '/faturacao', titulo: 'Faturação', nota: 'Documentos emitidos e valores recebidos por serviço.', icone: 'recibo' },
-  { href: '/pagamentos', titulo: 'Pagamentos', nota: 'Tentativas por confirmar e reconciliação.', icone: 'cartao' },
+  { href: '/irs?separador=pagamentos', titulo: 'Pagamentos do IRS', nota: 'Pagamentos Stripe, recebidos e por liquidar.', icone: 'cartao' },
   { href: '/avisos', titulo: 'Avisos', nota: 'Mensagens que aparecem no website e na plataforma do IRS.', icone: 'megafone' },
   { href: '/configuracao', titulo: 'Configurações', nota: 'Integrações, cifragem e estado do sistema.', icone: 'engrenagem' },
 ];
@@ -21,17 +21,16 @@ export default async function VisaoGeral({ searchParams }: { searchParams: Promi
   const { client, context } = await session();
   const parametros = await searchParams;
   const administrador = context.email.toLowerCase() === 'contabilidade.rubenrodrigues@gmail.com';
-  const irs = (process.env.NEXT_PUBLIC_IRS_URL || '').replace(/\/$/, '');
 
   const { data, error } = await client.rpc('management_overview');
 
   const indicadores: [string, unknown, string | null][] = [
-    ['IRS em acompanhamento', data?.open_cases, irs ? `${irs}/gabinete` : null],
+    ['IRS em acompanhamento', data?.open_cases, '/irs'],
     ...(administrador
       ? ([
           ['Utilizadores', data?.users, '/utilizadores'],
           ['Empresas', data?.companies, '/empresas'],
-          ['Pagamentos por confirmar', data?.pending_payments, '/pagamentos'],
+          ['Pagamentos por confirmar', data?.pending_payments, '/irs?separador=pagamentos'],
         ] as [string, unknown, string | null][])
       : []),
   ];

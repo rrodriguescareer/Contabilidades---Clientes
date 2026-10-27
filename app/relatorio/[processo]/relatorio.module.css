@@ -1,0 +1,33 @@
+/* Pensado para o papel: margens de impressão, sem fundos escuros, e quebras
+   de página onde elas fazem sentido. */
+.folha {
+  max-inline-size: 48rem;
+  margin-inline: auto;
+  padding: 2rem 1.5rem 3rem;
+  background: #fff;
+  color: #11223c;
+  font-size: .9rem;
+  line-height: 1.5;
+}
+.topo { display: flex; gap: 1.2rem; align-items: flex-start; border-bottom: 2px solid #0a2344; padding-bottom: 1rem; }
+.logo { inline-size: 4.6rem; block-size: auto; }
+.topo h1 { font-size: 1.25rem; margin: 0 0 .3rem; letter-spacing: -.02em; }
+.topo p { margin: 0; font-size: .82rem; color: #52647d; }
+
+.folha section { margin-top: 1.4rem; break-inside: avoid; }
+.folha h2 { font-size: .98rem; margin: 0 0 .5rem; }
+
+.tabela { inline-size: 100%; border-collapse: collapse; font-size: .82rem; }
+.tabela th {
+  text-align: left; font-size: .7rem; text-transform: uppercase; letter-spacing: .06em;
+  color: #52647d; border-bottom: 1px solid #c6d6ee; padding: .35rem .4rem;
+}
+.tabela td { padding: .35rem .4rem; border-bottom: 1px solid #eef3fb; vertical-align: top; }
+
+.docs, .nota { font-size: .8rem; color: #52647d; margin: .4rem 0 0; }
+.rodape { margin-top: 2rem; padding-top: .8rem; border-top: 1px solid #c6d6ee; font-size: .72rem; color: #52647d; }
+
+@media print {
+  .folha { padding: 0; max-inline-size: none; }
+  @page { margin: 16mm; }
+}

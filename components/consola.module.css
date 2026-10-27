@@ -218,3 +218,15 @@
 .fichaCaixa h3 { font-size: var(--t-xs); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--texto-ténue); }
 .perigo { border-color: color-mix(in srgb, var(--critico) 32%, transparent); background: var(--critico-suave); }
 .perigo h3 { color: var(--critico); }
+
+.navNome { flex: 1 1 auto; }
+.navContagem {
+  min-inline-size: 1.4rem;
+  padding: .08rem .45rem;
+  border-radius: 999px;
+  background: var(--acao);
+  color: #fff;
+  font-size: .72rem;
+  font-weight: 700;
+  text-align: center;
+}
