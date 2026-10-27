@@ -11,14 +11,16 @@ const TITULOS: Record<string, string> = {
   '/faturacao': 'Faturação',
   '/pagamentos': 'Pagamentos',
   '/configuracao': 'Configurações',
+  '/precos': 'Preços e campanhas',
+  '/avisos': 'Avisos',
 };
 
 export function Titulo() {
   const caminho = usePathname();
   return (
     <div className={e.topoTitulo}>
-      <span>Administração</span>
       <h1>{TITULOS[caminho] ?? 'Gestão'}</h1>
+      <span>Gestão de clientes</span>
     </div>
   );
 }

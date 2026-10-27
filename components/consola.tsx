@@ -24,21 +24,22 @@ export function Consola({
     <div className={e.consola}>
       <aside className={e.lateral}>
         <Link href="/app" className={e.marca}>
-          <img src="/rr-branco.svg" alt="RR." width={259} height={142} />
-          <span className={e.marcaTexto}>
-            <strong>Gestão</strong>
-            <span>Centro de administração</span>
-          </span>
+          <img src="/rr.svg" alt="RR." width={259} height={142} />
+          <span className={e.modo}>Gestão</span>
         </Link>
-
-        <span className={e.papel}>{administrador ? 'Administrador' : 'Contabilista certificado'}</span>
 
         <Navegacao irs={enderecoIrs()} />
 
         <div className={e.rodapeLateral}>
-          <span>{email}</span>
+          <div className={e.eu}>
+            <span className={e.avatar}>{iniciais(email)}</span>
+            <div>
+              <strong>{administrador ? 'Administrador' : 'Contabilista Certificado'}</strong>
+              <span>{email}</span>
+            </div>
+          </div>
           <form action={signOut}>
-            <button>Terminar sessão</button>
+            <button className={e.sair}>Sair</button>
           </form>
         </div>
       </aside>
@@ -54,6 +55,8 @@ export function Consola({
     </div>
   );
 }
+
+const iniciais = (email: string) => (email.split('@')[0] || '?').slice(0, 2).toUpperCase();
 
 export function Avisos({ erro, mensagem }: { erro?: string; mensagem?: string }) {
   return (
