@@ -60,7 +60,10 @@ test('production registration, administration, quotations, checkout and private 
    assert.equal((await db.query('select * from public.account_access')).rows.length,0);
    await actor(ids.staff);assert.equal((await db.query('select accepted_by from public.household_invitations where id=$1',[invitation])).rows[0].accepted_by,ids.guest);
   });
-  const newCase=async(account=a)=>{await actor(ids.staff);const id=(await db.query('select public.create_irs_case($1,$2) as id',[account,year++])).rows[0].id;await actor(account===a?ids.a:ids.b);return id;};
+  // O pagamento só abre com o processo pronto a submeter: o titular tem de ter a senha das Finanças guardada.
+  const newCase=async(account=a)=>{await actor(ids.staff);const id=(await db.query('select public.create_irs_case($1,$2) as id',[account,year++])).rows[0].id;
+   await db.exec('reset role');await db.query("insert into public.tax_credentials(person_id,account_id,encrypted_password) select cp.person_id,cp.account_id,'ensaio' from public.case_people cp where cp.case_id=$1 and cp.relationship='titular' on conflict (person_id) do nothing",[id]);
+   await actor(account===a?ids.a:ids.b);return id;};
   const income=async(process,category,{person=holder,property=null,account=a}={})=>db.query("insert into public.income_records(account_id,case_id,category,person_id,property_id,title,mode) values($1,$2,$3,$4,$5,'Income','documents')",[account,process,category,person,property]);
   const property=async(process,account=a)=>(await db.query("insert into public.property_assets(account_id,case_id,label) values($1,$2,'Property') returning id",[account,process])).rows[0].id;
   const quote=async(process,coupon='',account=a)=>(await db.query('select public.quote_irs_checkout($1,$2,$3) as quote',[account,process,coupon])).rows[0].quote;
@@ -112,6 +115,12 @@ test('production registration, administration, quotations, checkout and private 
    assert.equal((await db.query('select status from public.irs_cases where id=$1',[c])).rows[0].status,'submitted_by_client');
    assert.equal((await db.query('select provider_order_id from public.irs_checkouts where id=$1',[result.id])).rows[0].provider_order_id,null);
    await actor(ids.staff);await db.query('select public.set_client_billing($1,false,null)',[ids.a]);
+  });
+  await t.test('payment does not open while the case cannot be submitted',async()=>{
+   const c=await newCase();await income(c,'employment');
+   await db.exec('reset role');await db.query('delete from public.tax_credentials where person_id in (select person_id from public.case_people where case_id=$1)',[c]);
+   await actor(ids.a);await assert.rejects(db.query("select public.begin_irs_checkout($1,$2,'')",[a,c]),/Incomplete case/);
+   await assert.rejects(db.query('select public.submeter_processo($1)',[c]),/Payment required/);
   });
   await t.test('checkout freezes fiscal writes; only a matching verified provider order can settle it once',async()=>{
    const c=await newCase();await income(c,'employment');
