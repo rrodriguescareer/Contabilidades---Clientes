@@ -25,7 +25,7 @@ test('one initial installation creates the complete schema and supports approval
   assert.deepEqual((await db.query("select tablename from pg_tables where schemaname='public' and not rowsecurity")).rows,[]);
   assert.equal((await db.query("select public from storage.buckets where id='irs-documents'")).rows[0].public,false);
   const staff='20000000-0000-4000-8000-000000000001',client='20000000-0000-4000-8000-000000000002';
-  for(const id of [staff,client])await db.query('insert into auth.users(id,email,raw_user_meta_data) values($1,$2,$3)',[id,(id===staff?'contabilidade.rubenrodrigues@gmail.com':id+'@example.com'),JSON.stringify({full_name:'Installation check',birth_date:'1980-01-01',nif:'123456789',terms_accepted:true,terms_version:'2026-10-23.3',privacy_version:'2026-10-23.3'})]);
+  for(const id of [staff,client])await db.query('insert into auth.users(id,email,raw_user_meta_data) values($1,$2,$3)',[id,(id===staff?'contabilidade.rubenrodrigues@gmail.com':id+'@example.com'),JSON.stringify({full_name:'Installation check',birth_date:'1980-01-01',nif:'123456789',terms_accepted:true,terms_version:'2026-10-28.1',privacy_version:'2026-10-28.1'})]);
   await db.query('insert into public.staff_users(user_id) values($1) on conflict do nothing',[staff]);
   await db.query("select set_config('request.jwt.claim.sub',$1,false)",[staff]);
   await db.exec('set role authenticated');
@@ -33,7 +33,7 @@ test('one initial installation creates the complete schema and supports approval
   assert.equal((await db.query('select public.approve_client($1,$2,2025) as id',[client,'Client'])).rows[0].id,account);
   await db.query('select public.create_irs_case($1,2026)',[account]);
   assert.equal((await db.query('select count(*)::int as n from public.irs_cases')).rows[0].n,2);
-  assert.equal((await db.query('select terms_version from public.legal_acceptances where user_id=$1',[client])).rows[0].terms_version,'2026-10-23.3');
+  assert.equal((await db.query('select terms_version from public.legal_acceptances where user_id=$1',[client])).rows[0].terms_version,'2026-10-28.1');
   await db.exec('reset role');
   await assert.rejects(db.exec(sql),/Ja existe public\./);
   await db.exec('rollback');

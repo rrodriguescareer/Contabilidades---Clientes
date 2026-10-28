@@ -8,7 +8,7 @@ No fim, a coluna `conta_gestao` indica se falta criar a conta do contabilista em
 
 Numa base ainda vazia, usar `supabase/install.sql`. O ficheiro anterior `upgrade-005-007.sql` continua disponível, mas `update-current.sql` é o caminho recomendado para a atualização atual.
 
-A versão dos termos e privacidade passa a `2026-10-23.3`. Os clientes existentes confirmam os textos atualizados e completam os novos campos de morada. Não se assume aceitação em nome deles.
+A versão dos termos e privacidade passa a `2026-10-28.1`. Os clientes existentes confirmam os textos atualizados e completam os novos campos de morada. Não se assume aceitação em nome deles.
 
 ## 2. Conta exclusiva do contabilista
 

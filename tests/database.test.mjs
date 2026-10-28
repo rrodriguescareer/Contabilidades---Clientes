@@ -23,7 +23,7 @@ test('shared schema, database constraints and tenant isolation',async t=>{
   for (const nome of (await readdir(pasta)).filter(n=>/^\d+_[a-z0-9_]+\.sql$/.test(n)).sort()) {
     await db.exec(await readFile(new URL(nome, pasta),'utf8'));
   }
-  for(const [name,id]of Object.entries(ids)) await db.query('insert into auth.users(id,email,raw_user_meta_data) values($1,$2,$3)',[id,(name==='staff'?'contabilidade.rubenrodrigues@gmail.com':name+'@example.com'),JSON.stringify({terms_accepted:true,terms_version:'2026-10-23.3',privacy_version:'2026-10-23.3',full_name:'Test '+name,birth_date:'1980-01-01',nif:name==='a'?'123456789':name==='b'?'223456789':name==='member'?'323456789':'423456789'})]);
+  for(const [name,id]of Object.entries(ids)) await db.query('insert into auth.users(id,email,raw_user_meta_data) values($1,$2,$3)',[id,(name==='staff'?'contabilidade.rubenrodrigues@gmail.com':name+'@example.com'),JSON.stringify({terms_accepted:true,terms_version:'2026-10-28.1',privacy_version:'2026-10-28.1',full_name:'Test '+name,birth_date:'1980-01-01',nif:name==='a'?'123456789':name==='b'?'223456789':name==='member'?'323456789':'423456789'})]);
   await db.query('insert into public.staff_users(user_id) values($1) on conflict do nothing',[ids.staff]);
   const actor=async id=>{await db.exec('reset role');await db.query("select set_config('request.jwt.claim.sub',$1,false)",[id]);await db.exec('set role authenticated');};
   await actor(ids.staff);
@@ -36,8 +36,8 @@ test('shared schema, database constraints and tenant isolation',async t=>{
   await t.test('acceptance stores server time, current versions and the authenticated user only',async()=>{
    await actor(ids.a);
    let rows=(await db.query('select * from public.legal_acceptances')).rows;
-   assert.equal(rows.length,1);assert.equal(rows[0].user_id,ids.a);assert.equal(rows[0].source,'registration');assert.equal(rows[0].terms_version,'2026-10-23.3');assert.ok(rows[0].accepted_at);
-   await db.query("select public.record_legal_acceptance('2026-10-23.3','2026-10-23.3')");assert.equal((await db.query('select * from public.legal_acceptances')).rows.length,1);
+   assert.equal(rows.length,1);assert.equal(rows[0].user_id,ids.a);assert.equal(rows[0].source,'registration');assert.equal(rows[0].terms_version,'2026-10-28.1');assert.ok(rows[0].accepted_at);
+   await db.query("select public.record_legal_acceptance('2026-10-28.1','2026-10-28.1')");assert.equal((await db.query('select * from public.legal_acceptances')).rows.length,1);
    await assert.rejects(db.query("select public.record_legal_acceptance('2026-10-23.1','2026-10-23.1')"));
    await assert.rejects(db.query('select public.record_legal_acceptance()'));
    await assert.rejects(db.query("update public.legal_acceptances set accepted_at='2000-01-01' where user_id=$1",[ids.a]));
@@ -48,7 +48,7 @@ test('shared schema, database constraints and tenant isolation',async t=>{
    await db.query('insert into auth.users(id,email,raw_user_meta_data) values($1,$2,$3)',[id,'no-consent@example.com',JSON.stringify({full_name:'Pending acceptance',birth_date:'1980-01-01',nif:'623456789'})]);
    await actor(ids.staff);const pending=(await db.query('select public.approve_client($1,$2,2025) as id',[id,'Pending account'])).rows[0].id;
    await actor(id);assert.equal((await db.query('select * from public.legal_acceptances')).rows.length,0);assert.equal((await db.query('select * from public.client_accounts where id=$1',[pending])).rows.length,0);
-   await db.query("select public.record_legal_acceptance('2026-10-23.3','2026-10-23.3')");assert.equal((await db.query('select * from public.client_accounts where id=$1',[pending])).rows.length,1);
+   await db.query("select public.record_legal_acceptance('2026-10-28.1','2026-10-28.1')");assert.equal((await db.query('select * from public.client_accounts where id=$1',[pending])).rows.length,1);
    assert.equal((await db.query('select source from public.legal_acceptances')).rows[0].source,'authenticated_confirmation');
   });
   await t.test('previous legal versions are retained but do not authorize the current portal',async()=>{
@@ -57,8 +57,8 @@ test('shared schema, database constraints and tenant isolation',async t=>{
    await db.query("insert into public.legal_acceptances(user_id,terms_version,privacy_version,source) values($1,'2026-10-23.1','2026-10-23.1','registration')",[id]);
    await actor(ids.staff);const account=(await db.query('select public.approve_client($1,$2,2025) as id',[id,'Versioned account'])).rows[0].id;
    await actor(id);assert.equal((await db.query('select * from public.client_accounts where id=$1',[account])).rows.length,0);
-   await db.query("select public.record_legal_acceptance('2026-10-23.3','2026-10-23.3')");assert.equal((await db.query('select * from public.client_accounts where id=$1',[account])).rows.length,1);
-   assert.deepEqual((await db.query('select terms_version from public.legal_acceptances order by terms_version')).rows.map(r=>r.terms_version),['2026-10-23.1','2026-10-23.3']);
+   await db.query("select public.record_legal_acceptance('2026-10-28.1','2026-10-28.1')");assert.equal((await db.query('select * from public.client_accounts where id=$1',[account])).rows.length,1);
+   assert.deepEqual((await db.query('select terms_version from public.legal_acceptances order by terms_version')).rows.map(r=>r.terms_version),['2026-10-23.1','2026-10-28.1']);
   });
   await t.test('client reads own tenant and cannot self-promote or grant modules',async()=>{
    await actor(ids.a);assert.equal((await db.query('select * from public.client_accounts')).rows.length,1);

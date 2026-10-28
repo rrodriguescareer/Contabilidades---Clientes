@@ -16,7 +16,7 @@ test('production registration, administration, quotations, checkout and private 
   create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text references storage.buckets(id),name text not null);
   alter table storage.objects enable row level security;grant select,insert on storage.objects to authenticated;`);
   await db.exec(await readFile(new URL('../supabase/install.sql',import.meta.url),'utf8'));
-  for(const [name,id]of Object.entries(ids))await db.query('insert into auth.users(id,email,email_confirmed_at,raw_user_meta_data) values($1,$2,$3,$4)',[id,name==='staff'?'contabilidade.rubenrodrigues@gmail.com':name+'@example.com',name==='unconfirmed'?null:new Date(),JSON.stringify({terms_accepted:true,terms_version:'2026-10-23.3',privacy_version:'2026-10-23.3'})]);
+  for(const [name,id]of Object.entries(ids))await db.query('insert into auth.users(id,email,email_confirmed_at,raw_user_meta_data) values($1,$2,$3,$4)',[id,name==='staff'?'contabilidade.rubenrodrigues@gmail.com':name+'@example.com',name==='unconfirmed'?null:new Date(),JSON.stringify({terms_accepted:true,terms_version:'2026-10-28.1',privacy_version:'2026-10-28.1'})]);
   const actor=async(id,role='authenticated')=>{await db.exec('reset role');await db.query("select set_config('request.jwt.claim.sub',$1,false)",[id]);await db.exec('set role '+role);};
   const save=async(id,name,nif)=>{await actor(id);return(await db.query("select public.save_personal_profile($1,'1980-01-01',$2,'+351 936432519','Rua de exemplo 1','4470-147','Maia',false) as id",[name,nif])).rows[0].id;};
   let a,b,ca,holder,spouse,year=2000;

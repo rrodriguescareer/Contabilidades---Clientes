@@ -1,5 +1,6 @@
 import type {SupabaseClient} from '@supabase/supabase-js';
 import type {Account,Process,Profile} from './data';
+import {LEGAL_VERSION} from './legal';
 export type PortalContext={id:string;email:string;email_confirmed:boolean;is_staff:boolean;profile:Profile;legal_accepted:boolean;accounts?:Account[];cases?:Process[]};
 export async function portalContext(client:SupabaseClient,id?:string){
  const {data,error}=await client.rpc('get_portal_context');
@@ -11,7 +12,7 @@ export async function portalContext(client:SupabaseClient,id?:string){
  id=verified.user.id;
  const [profile,staff,legal]=await Promise.all([
   client.from('profiles').select('*').eq('id',id).single(),client.rpc('is_staff'),
-  client.from('legal_acceptances').select('id').eq('user_id',id).eq('terms_version','2026-10-23.3').eq('privacy_version','2026-10-23.3').limit(1),
+  client.from('legal_acceptances').select('id').eq('user_id',id).eq('terms_version',LEGAL_VERSION).eq('privacy_version',LEGAL_VERSION).limit(1),
  ]);
  const failure=profile.error||staff.error||legal.error;
  if(failure||!profile.data)return {data:null,error:failure||new Error('Profile unavailable')};
