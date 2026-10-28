@@ -311,6 +311,10 @@ a.item { text-decoration: none; }
 .etiqueta[data-tom='atencao'] { background: var(--atencao-suave); color: #7a4d05; }
 .etiqueta[data-tom='erro'] { background: var(--critico-suave); color: #8c170f; }
 .etiqueta[data-tom='info'] { background: var(--acao-suave); color: var(--acao-forte); }
+.acoesDocumento { display: inline-flex; align-items: center; gap: .6rem; }
+.acoesDocumento a { text-decoration: none; }
+.ligacao { color: var(--acao-forte); font-size: var(--t-sm); font-weight: 650; }
+.ligacao:hover { text-decoration: underline; }
 
 .badgeAzul {
   display: inline-block;

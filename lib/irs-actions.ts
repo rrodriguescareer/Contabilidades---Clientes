@@ -71,21 +71,6 @@ export async function verSenhaFinancas(pessoa: string) {
   }
 }
 
-/** Descarregar um documento do cliente, com registo da descarga. */
-export async function descarregarDocumento(documento: string) {
-  const { client } = await session();
-  if (!uuid(documento)) return { ok: false as const, erro: 'Documento inválido.' };
-  const { data: caminho, error } = await client.rpc('registar_descarga', { documento });
-  if (error || typeof caminho !== 'string') {
-    return { ok: false as const, erro: error?.code === '22023' ? error.message : 'Documento indisponível.' };
-  }
-  const { data: assinado, error: semUrl } = await client.storage
-    .from('irs-documents')
-    .createSignedUrl(caminho, 60, { download: true });
-  if (semUrl || !assinado) return { ok: false as const, erro: 'Não foi possível abrir o documento.' };
-  return { ok: true as const, url: assinado.signedUrl };
-}
-
 export async function resolverAlertaDoGabinete(alerta: string) {
   const { client } = await session();
   if (!uuid(alerta)) return { ok: false, erro: 'Alerta inválido.' };

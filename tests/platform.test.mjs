@@ -140,10 +140,26 @@ test('production registration, administration, quotations, checkout and private 
    assert.equal((await db.query('select count(*)::int as n from public.progress_events where case_id=$1',[c])).rows[0].n,1);
    assert.equal((await db.query('select status from public.irs_cases where id=$1',[c])).rows[0].status,'submitted_by_client');
   });
+  await t.test('a client upload is finished only once the file is in storage',async()=>{
+   const c=await newCase();
+   const doc=(await db.query("select public.prepare_irs_document($1,$2,null,'PPR','ppr.webp','image/webp',10,$3) as data",[a,c,'34'.repeat(32)])).rows[0].data;
+   const concluir=()=>db.query("select public.concluir_documento($1,'deduction',null,'Comprovativo do PPR')",[doc.id]);
+   await assert.rejects(concluir(),/File not received/);
+   await db.query("insert into storage.objects(bucket_id,name) values('irs-documents',$1)",[doc.path]);
+   await actor(ids.b);await assert.rejects(concluir());
+   await actor(ids.a);await concluir();await concluir();
+   const row=(await db.query('select state,category,description from public.documents where id=$1',[doc.id])).rows[0];
+   assert.deepEqual({...row},{state:'uploaded',category:'deduction',description:'Comprovativo do PPR'});
+   // A senha guardada pelo gabinete aparece ao cliente como guardada.
+   const membros=(await db.query("select public.espaco_irs('agregado',$1) as d",[c])).rows[0].d.membros;
+   assert.equal(membros.find((m)=>m.relacao==='titular').tem_senha,true);
+  });
   await t.test('identical documents reuse private bytes within one case only',async()=>{
    const c=await newCase(),hash='12'.repeat(32);
    const prepare=async()=> (await db.query("select public.prepare_irs_document($1,$2,null,'Other','file.pdf','application/pdf',10,$3) as data",[a,c,hash])).rows[0].data;
-   const first=await prepare();assert.equal(first.reused,false);await assert.rejects(prepare());
+   const first=await prepare();assert.equal(first.reused,false);
+   // Repetir um envio que ficou a meio retoma o mesmo documento.
+   const again=await prepare();assert.equal(again.id,first.id);assert.equal(again.retomado,true);
    await db.query("update public.documents set state='uploaded' where id=$1",[first.id]);
    const second=await prepare();assert.equal(second.reused,true);assert.equal(second.path,first.path);assert.notEqual(second.id,first.id);
    await db.query("update public.documents set state='uploaded' where id=$1",[second.id]);

@@ -1,6 +1,6 @@
 'use client';
 import { useActionState, useEffect, useRef, useState, useTransition } from 'react';
-import { descarregarDocumento, enviarMensagem, verSenhaFinancas } from '@/lib/irs-actions';
+import { enviarMensagem, verSenhaFinancas } from '@/lib/irs-actions';
 import { posicao, estadoDe, type Prontidao } from '@/lib/fluxo';
 import { AMBITOS, DEDUCOES, SEPARADORES, pertence } from './separadores';
 import { Avanco } from './avanco';
@@ -80,7 +80,7 @@ export function Processo({ dados, processo, abaInicial, aoMudar }:
     for (let i = mensagens.length - 1; i >= 0 && !mensagens[i].do_gabinete; i--) n++;
     return n;
   })();
-  const porAbrir = documentos.filter((d) => d.descargas === 0).length;
+  const porAbrir = documentos.filter((d) => d.descargas === 0 && d.estado !== 'pending').length;
 
   const contagem: Record<string, number | undefined> = {
     agregado: membros.length,
@@ -402,46 +402,43 @@ function Deducoes({ deducoes, nome }: { deducoes: Record<string, unknown>; nome:
 /* ------------------------------------------------------------ documentos */
 
 function Documentos({ documentos, aoMudar }: { documentos: Documento[]; aoMudar: () => void }) {
-  const [erro, setErro] = useState<string | null>(null);
-  const [aAbrir, setAAbrir] = useState<string | null>(null);
   if (documentos.length === 0) return <div className={e.vazio}>Sem documentos.</div>;
+  /* Abrir é uma ligação normal: o navegador mostra o PDF ou a imagem num
+     separador novo, sem bloqueio de pop-ups. A abertura fica registada na
+     rota; volta-se a pedir a vista para o "Aberto" acompanhar. */
+  const depois = () => window.setTimeout(aoMudar, 1500);
   return (
-    <>
-      {erro && <p className="aviso-critico">{erro}</p>}
-      <div className={e.quadro}>
-        <table className={e.tabela}>
-          <thead><tr><th>Tipo</th><th>Descrição</th><th>Imóvel</th><th>Enviado</th><th>Aberto</th><th /></tr></thead>
-          <tbody>
-            {documentos.map((d) => (
-              <tr key={d.id}>
-                <td>{d.tipo}</td>
-                <td>{d.descricao || <span className={e.sub}>{d.nome}</span>}</td>
-                <td>{d.imovel || '—'}</td>
-                <td className={e.sub}>{dia(d.em)}</td>
-                <td>
-                  {d.descargas > 0
+    <div className={e.quadro}>
+      <table className={e.tabela}>
+        <thead><tr><th>Tipo</th><th>Descrição</th><th>Imóvel</th><th>Enviado</th><th>Aberto</th><th /></tr></thead>
+        <tbody>
+          {documentos.map((d) => (
+            <tr key={d.id}>
+              <td>{d.tipo}</td>
+              <td>{d.descricao || <span className={e.sub}>{d.nome}</span>}</td>
+              <td>{d.imovel || '—'}</td>
+              <td className={e.sub}>{dia(d.em)}</td>
+              <td>
+                {d.estado === 'pending'
+                  ? <span className={e.etiqueta} data-tom="erro" title="O cliente começou o envio mas o ficheiro não chegou.">Envio incompleto</span>
+                  : d.descargas > 0
                     ? <span className={e.etiqueta} data-tom="ok">{d.descargas}×</span>
                     : <span className={e.etiqueta} data-tom="atencao">Por abrir</span>}
-                </td>
-                <td className={e.direita}>
-                  <button type="button" className="btn btn-secundario btn-pequeno" disabled={aAbrir === d.id}
-                          onClick={async () => {
-                            setErro(null); setAAbrir(d.id);
-                            const r = await descarregarDocumento(d.id);
-                            setAAbrir(null);
-                            if (!r.ok) { setErro(r.erro); return; }
-                            window.location.assign(r.url);
-                            aoMudar();
-                          }}>
-                    {aAbrir === d.id ? 'A abrir…' : 'Descarregar'}
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </>
+              </td>
+              <td className={e.direita}>
+                {d.estado !== 'pending' && (
+                  <span className={e.acoesDocumento}>
+                    <a className="btn btn-secundario btn-pequeno" href={`/irs/documento/${d.id}`}
+                       target="_blank" rel="noopener" onClick={depois}>Abrir</a>
+                    <a className={e.ligacao} href={`/irs/documento/${d.id}?descarregar`} onClick={depois}>Descarregar</a>
+                  </span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
