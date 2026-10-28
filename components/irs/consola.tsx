@@ -2,7 +2,7 @@
 import { useCallback, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { resolverAlertaDoGabinete } from '@/lib/irs-actions';
-import { FASES, estadoDe, posicao } from '@/lib/fluxo';
+import { FASES, emRecolha, estadoDe, posicao } from '@/lib/fluxo';
 import { Pilula } from './pilula';
 import { Processo } from './processo';
 import { Integracoes } from './integracoes';
@@ -187,7 +187,9 @@ function Fila({ dados, totais, abrir }:
                           ? <span className={e.etiqueta} data-tom="ok">Pago</span>
                           : p.pagamento === 'pending'
                             ? <span className={e.etiqueta} data-tom="atencao">A aguardar</span>
-                            : <span className={e.etiqueta}>—</span>}
+                            : emRecolha(String(p.estado))
+                              ? <span className={e.etiqueta}>—</span>
+                              : <span className={e.etiqueta} data-tom="erro">Por pagar</span>}
                         {p.dois_fatores ? <span className={e.etiqueta} data-tom="atencao">2FA</span> : null}
                       </td>
                       <td className={e.sub}>{dia(p.desde)}</td>

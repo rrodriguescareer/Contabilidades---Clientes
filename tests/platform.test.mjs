@@ -120,7 +120,31 @@ test('production registration, administration, quotations, checkout and private 
    const c=await newCase();await income(c,'employment');
    await db.exec('reset role');await db.query('delete from public.tax_credentials where person_id in (select person_id from public.case_people where case_id=$1)',[c]);
    await actor(ids.a);await assert.rejects(db.query("select public.begin_irs_checkout($1,$2,'')",[a,c]),/Incomplete case/);
-   await assert.rejects(db.query('select public.submeter_processo($1)',[c]),/Payment required/);
+   // Submeter sem estar pronto devolve o que falta, sem mudar o estado.
+   const tentativa=(await db.query('select public.submeter_processo($1) as r',[c])).rows[0].r;
+   assert.equal(tentativa.ok,false);assert.ok(tentativa.faltas.length>0);
+  });
+  await t.test('a client can submit first and pay afterwards, in any phase until closed',async()=>{
+   const c=await newCase();await income(c,'employment');
+   const r=(await db.query('select public.submeter_processo($1) as r',[c])).rows[0].r;
+   assert.equal(r.ok,true);assert.equal(r.pago,false);
+   assert.equal((await db.query('select status from public.irs_cases where id=$1',[c])).rows[0].status,'submitted_by_client');
+   await actor(ids.staff);await db.query("update public.irs_cases set status='filed' where id=$1",[c]);
+   await actor(ids.a);
+   const attempt=(await db.query("select public.begin_irs_checkout($1,$2,'') as data",[a,c])).rows[0].data;
+   assert.equal(attempt.created,true);
+   await actor(ids.staff,'service_role');
+   await db.query("select public.anexar_sessao_de_pagamento($1,'cs_test_depois','')",[attempt.id]);
+   await db.query("select public.finalizar_pagamento_stripe($1,'cs_test_depois',$2,true,false,$3,'eur')",[attempt.id,attempt.id,attempt.amount_cents]);
+   await actor(ids.a);
+   assert.equal((await db.query('select state from public.irs_checkouts where id=$1',[attempt.id])).rows[0].state,'paid');
+   // Pagar depois não mexe na fase do processo.
+   assert.equal((await db.query('select status from public.irs_cases where id=$1',[c])).rows[0].status,'filed');
+   assert.equal((await db.query("select title from public.progress_events where case_id=$1 order by created_at desc limit 1",[c])).rows[0].title,'Pagamento recebido');
+   // Um processo fechado e por pagar já não abre pagamento.
+   const fechado=await newCase();await income(fechado,'employment');
+   await actor(ids.staff);await db.query("update public.irs_cases set status='closed' where id=$1",[fechado]);
+   await actor(ids.a);await assert.rejects(db.query("select public.begin_irs_checkout($1,$2,'')",[a,fechado]),/Case is closed/);
   });
   await t.test('checkout freezes fiscal writes; only a matching verified provider order can settle it once',async()=>{
    const c=await newCase();await income(c,'employment');

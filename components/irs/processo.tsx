@@ -1,7 +1,7 @@
 'use client';
 import { useActionState, useEffect, useRef, useState, useTransition } from 'react';
 import { enviarMensagem, verSenhaFinancas } from '@/lib/irs-actions';
-import { posicao, estadoDe, type Prontidao } from '@/lib/fluxo';
+import { emRecolha, posicao, estadoDe, type Prontidao } from '@/lib/fluxo';
 import { AMBITOS, DEDUCOES, SEPARADORES, pertence } from './separadores';
 import { Avanco } from './avanco';
 import { TestesCegid } from './integracoes';
@@ -146,9 +146,11 @@ export function Processo({ dados, processo, abaInicial, aoMudar }:
               <strong>{documentos.length}</strong>
               <span>Documentos{porAbrir ? ` · ${porAbrir} por abrir` : ''}</span>
             </div>
-            <div className={e.indicador}>
+            {/* O cliente pode submeter e pagar depois: fica à vista o que está por pagar. */}
+            <div className={e.indicador} data-destaque={!emRecolha(estado) && checkout?.estado !== 'paid'}>
               <strong>{checkout ? euros(checkout.total as number) : '—'}</strong>
-              <span>{checkout ? PAGAMENTOS[String(checkout.estado)] || String(checkout.estado) : 'Sem pagamento'}</span>
+              <span>{checkout ? PAGAMENTOS[String(checkout.estado)] || String(checkout.estado)
+                : emRecolha(estado) ? 'Sem pagamento' : 'Por pagar'}</span>
             </div>
           </div>
           {cab.valor_final != null && (
