@@ -430,6 +430,7 @@ a.item { text-decoration: none; }
 .contactos a { color: var(--acao-forte); font-weight: 600; text-decoration: none; }
 .contactos a:hover { text-decoration: underline; }
 .estadoCabecalho { display: grid; justify-items: end; gap: .5rem; }
+.acoesCabecalho { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .4rem; }
 
 .abas {
   display: flex;

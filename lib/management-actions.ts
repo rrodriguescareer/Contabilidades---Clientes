@@ -13,16 +13,42 @@ export async function blockUser(form:FormData){
  if(error)finish('/utilizadores','Não foi possível alterar o acesso. A conta do contabilista não pode ser bloqueada.',true);
  finish('/utilizadores',blocked?'Acesso bloqueado.':'Bloqueio removido. Os acessos aos módulos devem ser reativados separadamente.');
 }
+/* Eliminar um utilizador por completo: a conta de que é titular e tudo o que
+   está pendurado nela (processos, agregado, rendimentos, documentos e os
+   ficheiros, mensagens, pagamentos, registos), confirmado ou não. A ficha no
+   Cegid fica: vive lá e é lá que se gere. A ordem importa — primeiro a base
+   (numa transação: ou sai tudo ou nada), depois os ficheiros, por fim a
+   autenticação. */
 export async function deleteUser(form:FormData){
  const {client,user}=await session();const target=text(form,'user'),confirmation=text(form,'confirmation').toLowerCase();
  if(!uuid(target)||target===user.id||!adminConfigured())finish('/utilizadores','A eliminação não está disponível para esta conta.',true);
- const {data:profile}=await client.from('profiles').select('email').eq('id',target).single();
- if(!profile?.email||profile.email.toLowerCase()!==confirmation)finish('/utilizadores','Escreva o email do utilizador para confirmar a eliminação.',true);
- const {error:blocked}=await client.rpc('prepare_user_deletion',{target});if(blocked)finish('/utilizadores','Não foi possível bloquear antes da eliminação.',true);
- const {error}=await adminClient().auth.admin.deleteUser(target,true);
- if(error)finish('/utilizadores','O acesso ficou bloqueado, mas a eliminação da autenticação falhou. Pode tentar novamente.',true);
- const {error:finished}=await client.rpc('finish_user_deletion',{target});if(finished)finish('/utilizadores','Autenticação eliminada. Falta concluir o registo de eliminação; contacte o suporte técnico.',true);
- finish('/utilizadores','Utilizador eliminado da autenticação. Elementos fiscais e financeiros sujeitos a conservação foram preservados.');
+ const {data:profile}=await client.from('profiles').select('email').eq('id',target).maybeSingle();
+ // Uma conta que a eliminação antiga deixou anonimizada já não tem email: confirma-se com a palavra ELIMINAR.
+ const esperado=profile?.email?profile.email.toLowerCase():'eliminar';
+ if(!profile||confirmation!==esperado)finish('/utilizadores',profile?.email?'Escreva o email do utilizador para confirmar a eliminação.':'Escreva ELIMINAR para confirmar.',true);
+
+ const {data:feito,error}=await client.rpc('eliminar_utilizador',{target});
+ if(error){
+  console.error(JSON.stringify({event:'rr_eliminar_falhou',codigo:error.code,erro:error.message}));
+  finish('/utilizadores',error.code==='22023'?error.message:'Não foi possível eliminar. Nada foi apagado.',true);
+ }
+ const resultado=(feito||{}) as {caminhos?:string[];contas?:number};
+
+ // Os ficheiros saem pelo Storage, que não deixa apagá-los por SQL.
+ const caminhos=(resultado.caminhos||[]).filter(Boolean);
+ let ficheirosEmFalta=0;
+ for(let i=0;i<caminhos.length;i+=100){
+  const {error:semFicheiros}=await adminClient().storage.from('irs-documents').remove(caminhos.slice(i,i+100));
+  if(semFicheiros){ficheirosEmFalta+=caminhos.slice(i,i+100).length;console.error(JSON.stringify({event:'rr_ficheiros_por_apagar',erro:semFicheiros.message}));}
+ }
+
+ const {error:semAuth}=await adminClient().auth.admin.deleteUser(target,false);
+ if(semAuth&&!/not.?found/i.test(semAuth.message)){
+  console.error(JSON.stringify({event:'rr_auth_por_apagar',erro:semAuth.message}));
+  finish('/utilizadores','Os dados foram apagados, mas a autenticação não. Tente eliminar outra vez para a remover.',true);
+ }
+ revalidatePath('/irs');
+ finish('/utilizadores',`Utilizador eliminado, com ${caminhos.length} ficheiro(s) e todos os registos.${ficheirosEmFalta?` ${ficheirosEmFalta} ficheiro(s) não saíram do armazenamento.`:''} A ficha no Cegid mantém-se.`);
 }
 export async function setBilling(form:FormData){
  const {client}=await session();const target=text(form,'user'),discount=text(form,'discount');

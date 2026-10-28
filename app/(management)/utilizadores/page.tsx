@@ -43,9 +43,17 @@ export default async function Utilizadores({
   ]);
 
   const ids = utilizadores?.map((perfil) => perfil.id) ?? [];
-  const { data: convites } = ids.length
-    ? await client.from('household_invitations').select('id,email,accepted_by,accepted_at').in('accepted_by', ids)
-    : { data: [] };
+  const [{ data: convites }, { data: resumos }] = ids.length
+    ? await Promise.all([
+        client.from('household_invitations').select('id,email,accepted_by,accepted_at').in('accepted_by', ids),
+        client.rpc('resumo_para_eliminar', { ids }),
+      ])
+    : [{ data: [] }, { data: {} }];
+  type Resumo = {
+    confirmado: boolean; ultimo_acesso: string | null; processos: number; rendimentos: number;
+    documentos: number; mensagens: number; pago_em: string | null; processo: string | null;
+  };
+  const resumoDe = (id: string) => ((resumos || {}) as Record<string, Resumo>)[id];
 
   const eContabilista = (id: string) =>
     Boolean(equipa?.some((membro) => membro.user_id === id && membro.active && membro.managed_by));
@@ -104,9 +112,12 @@ export default async function Utilizadores({
                 ? { rotulo: 'Eliminado', classe: 'etiqueta-critico' }
                 : perfil.disabled_at
                   ? { rotulo: 'Bloqueado', classe: 'etiqueta-critico' }
-                  : perfil.onboarding_completed_at
-                    ? { rotulo: 'Dados completos', classe: 'etiqueta-positivo' }
-                    : { rotulo: 'Registo por completar', classe: 'etiqueta-atencao' };
+                  : resumoDe(perfil.id) && !resumoDe(perfil.id).confirmado
+                    ? { rotulo: 'Email por confirmar', classe: 'etiqueta-atencao' }
+                    : perfil.onboarding_completed_at
+                      ? { rotulo: 'Dados completos', classe: 'etiqueta-positivo' }
+                      : { rotulo: 'Registo por completar', classe: 'etiqueta-atencao' };
+              const resumo = resumoDe(perfil.id);
 
               return (
                 <details className={e.ficha} key={perfil.id}>
@@ -210,28 +221,47 @@ export default async function Utilizadores({
                           </form>
                         </div>
 
-                        <div className={`${e.fichaCaixa} ${e.perigo}`}>
-                          <h3>Eliminar utilizador</h3>
+                      </div>
+                    )}
+                    {perfil.id !== user.id && !contabilista && (
+                      <div className={`${e.fichaCaixa} ${e.perigo}`}>
+                        <h3>{perfil.deleted_at ? 'Eliminar definitivamente' : 'Eliminar utilizador'}</h3>
+                        <p className="pequeno">
+                          {perfil.deleted_at
+                            ? 'Esta conta foi eliminada pelo método antigo, que só anonimizava o perfil: os dados continuam na base. Isto apaga-os de vez.'
+                            : 'Apaga a conta e tudo o que está nela — confirmada ou não — e os ficheiros enviados. Não se pode desfazer. A ficha no Cegid mantém-se.'}
+                        </p>
+                        {resumo && (
                           <p className="pequeno">
-                            A autenticação é eliminada e o acesso bloqueado. Os documentos fiscais e financeiros
-                            sujeitos a conservação legal são preservados.
+                            Vai ser apagado: {resumo.processos} processo(s), {resumo.rendimentos} rendimento(s),{' '}
+                            {resumo.documentos} documento(s) e {resumo.mensagens} mensagem(ns).
                           </p>
-                          <form action={deleteUser} className="pilha pilha-3">
-                            <input name="user" type="hidden" value={perfil.id} />
-                            <label className="campo">
-                              <span>Escreva o email para confirmar</span>
-                              <input name="confirmation" type="email" className="entrada" autoComplete="off" required />
-                            </label>
-                            <button className="btn btn-critico btn-sm" disabled={!adminConfigured()}>
-                              Eliminar utilizador
-                            </button>
-                            {!adminConfigured() && (
-                              <p className="micro">
-                                A eliminação precisa da configuração administrativa indicada em Configurações.
-                              </p>
+                        )}
+                        {resumo?.pago_em && (
+                          <p className="aviso aviso-atencao pequeno">
+                            Pagou em {formatarData(resumo.pago_em)}. Uma contestação do pagamento pode chegar até 120 dias
+                            depois e, eliminado o utilizador, deixa de haver prova.{' '}
+                            {resumo.processo && (
+                              <a href={`/relatorio/${resumo.processo}/atividade`} target="_blank" rel="noopener">
+                                Descarregue primeiro o relatório de atividade.
+                              </a>
                             )}
-                          </form>
-                        </div>
+                          </p>
+                        )}
+                        <form action={deleteUser} className="pilha pilha-3">
+                          <input name="user" type="hidden" value={perfil.id} />
+                          <label className="campo">
+                            <span>{perfil.email ? 'Escreva o email para confirmar' : 'Escreva ELIMINAR para confirmar'}</span>
+                            <input name="confirmation" type="text" className="entrada" autoComplete="off" required
+                                   placeholder={perfil.email || 'ELIMINAR'} />
+                          </label>
+                          <button className="btn btn-critico btn-sm" disabled={!adminConfigured()}>
+                            {perfil.deleted_at ? 'Eliminar definitivamente' : 'Eliminar utilizador e todos os dados'}
+                          </button>
+                          {!adminConfigured() && (
+                            <p className="micro">A eliminação precisa da configuração administrativa indicada em Configurações.</p>
+                          )}
+                        </form>
                       </div>
                     )}
                   </div>

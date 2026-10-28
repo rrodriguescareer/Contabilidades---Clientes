@@ -112,9 +112,15 @@ export function Processo({ dados, processo, abaInicial, aoMudar }:
         <div className={e.estadoCabecalho}>
           <Pilula estado={estado} />
           <span className={e.sub}>Passo {indice + 1} de {total} · desde {dia(String(cab.desde || ''))}</span>
-          <a className="btn btn-secundario" href={`/relatorio/${processo}`} target="_blank" rel="noopener">
-            Relatório do processo
-          </a>
+          <div className={e.acoesCabecalho}>
+            <a className="btn btn-secundario btn-pequeno" href={`/relatorio/${processo}`} target="_blank" rel="noopener">
+              Relatório do processo
+            </a>
+            <a className="btn btn-secundario btn-pequeno" href={`/relatorio/${processo}/atividade`} target="_blank" rel="noopener"
+               title="Registo cronológico de todos os passos, para responder a uma contestação de pagamento">
+              Relatório de atividade (prova)
+            </a>
+          </div>
         </div>
       </section>
 

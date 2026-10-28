@@ -1,0 +1,118 @@
+/* O relatório imprime-se em A4, ao alto. Grelha completa, como uma folha de
+   cálculo: cada célula com moldura, cabeçalhos repetidos em cada página,
+   números de página no rodapé. No ecrã, a mesma folha centrada. */
+
+@page {
+  size: A4 portrait;
+  margin: 14mm 12mm 16mm;
+  @bottom-right {
+    content: "Página " counter(page) " de " counter(pages);
+    font-family: Arial, sans-serif;
+    font-size: 8pt;
+    color: #52647d;
+  }
+  @bottom-left {
+    content: "RR. · Relatório de atividade";
+    font-family: Arial, sans-serif;
+    font-size: 8pt;
+    color: #52647d;
+  }
+}
+
+.folha {
+  max-inline-size: 60rem;
+  margin: 2rem auto 4rem;
+  padding: 2.4rem 2.6rem;
+  background: #fff;
+  color: #0a2344;
+  font-family: Arial, 'Helvetica Neue', sans-serif;
+  font-size: 9.5pt;
+  line-height: 1.4;
+  box-shadow: 0 2px 24px rgb(10 35 68 / .08);
+}
+
+.cabecalho {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 1.2rem;
+  align-items: center;
+  padding-block-end: 1rem;
+  margin-block-end: 1.2rem;
+  border-block-end: 2px solid #0a2344;
+}
+.logo { inline-size: 4.2rem; block-size: auto; }
+.cabecalho h1 { margin: 0; font-size: 14pt; letter-spacing: -.01em; line-height: 1.2; }
+.en { display: block; font-size: 7.5pt; font-weight: 400; color: #65748b; letter-spacing: 0; text-transform: none; }
+.folha h2 .en { display: inline; margin-inline-start: .4rem; }
+
+.ref { border-collapse: collapse; font-size: 8pt; }
+.ref th, .ref td { padding: .15rem .45rem; border: 1px solid #b9c7da; text-align: start; }
+.ref th { background: #edf3fc; font-weight: 700; white-space: nowrap; }
+
+.folha section { margin-block-end: 1.1rem; }
+.folha h2 {
+  margin: 0 0 .45rem;
+  padding: .3rem .5rem;
+  background: #0a2344;
+  color: #fff;
+  font-size: 9.5pt;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+.folha h2 .en { color: #b9cbea; }
+
+.ficha, .grelha { inline-size: 100%; border-collapse: collapse; margin-block-end: .5rem; }
+.ficha caption {
+  caption-side: top;
+  text-align: start;
+  font-weight: 700;
+  font-size: 8.5pt;
+  padding: .3rem 0;
+}
+.ficha th, .ficha td, .grelha th, .grelha td {
+  padding: .28rem .45rem;
+  border: 1px solid #b9c7da;
+  vertical-align: top;
+  text-align: start;
+}
+.ficha th { inline-size: 28%; background: #f3f7fd; font-weight: 700; }
+.grelha thead th {
+  background: #dfe8f6;
+  font-weight: 700;
+  font-size: 8.5pt;
+  white-space: nowrap;
+}
+.grelha thead th .en { color: #52647d; }
+.grelha tbody tr:nth-child(even) td { background: #f8fafd; }
+.registo td { font-size: 8.5pt; }
+.registo td:first-child { inline-size: 2.2rem; }
+.num { text-align: end !important; font-variant-numeric: tabular-nums; }
+.nowrap { white-space: nowrap; }
+.mono { font-family: 'Courier New', monospace; font-size: 8pt; word-break: break-all; }
+.detalhe { overflow-wrap: anywhere; }
+
+.nota { margin: .4rem 0 0; font-size: 7.5pt; color: #52647d; }
+
+.declaracao p { margin: 0 0 .6rem; text-align: justify; }
+.assinatura {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 2.4rem;
+  margin-block-start: 2.6rem;
+  break-inside: avoid;
+}
+.linha { display: block; block-size: 3.2rem; border-block-end: 1px solid #0a2344; margin-block-end: .3rem; }
+.assinatura p { margin: 0; font-size: 8.5pt; color: #52647d; }
+.preenchido { color: #0a2344 !important; font-weight: 700; }
+
+@media print {
+  .folha :global(.nao-imprimir) { display: none !important; }
+  .folha { margin: 0; padding: 0; max-inline-size: none; box-shadow: none; }
+  .folha thead { display: table-header-group; }
+  .folha tr { break-inside: avoid; }
+  .folha h2 { break-after: avoid; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .grelha thead th, .ficha th, .ref th, .grelha tbody tr:nth-child(even) td {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

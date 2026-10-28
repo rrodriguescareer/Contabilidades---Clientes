@@ -117,6 +117,15 @@ export async function enviarMensagem(
 
 /* --------------------------------------------------------------- Cegid */
 
+/** Prova numa contestação: o que foi feito no Cegid, e quando. Falhar a
+    registar não faz falhar a ação. */
+async function registarCegid(tipo: string, detalhe: string, conta: string | null, processo: string) {
+  const { error } = await adminClient().from('registo_atividade').insert({
+    account_id: conta, case_id: processo, tipo, detalhe: detalhe.slice(0, 2000),
+  });
+  if (error) console.error(JSON.stringify({ event: 'rr_registo_falhou', tipo, erro: error.message }));
+}
+
 export async function estadoCegid() {
   await session();
   return { configurado: await temCredenciais(), origem: await origemDasCredenciais() };
@@ -156,7 +165,7 @@ async function titularDoProcesso(processo: string) {
   const nome = perfil?.full_name
     || (caso as { client_accounts?: { name?: string } }).client_accounts?.name
     || 'Cliente';
-  return { nome, perfil };
+  return { nome, perfil, conta: caso.account_id as string };
 }
 
 export async function criarFichaCegid(processo: string): Promise<Resposta> {
@@ -171,9 +180,11 @@ export async function criarFichaCegid(processo: string): Promise<Resposta> {
     rua: alvo.perfil.street, codigoPostal: alvo.perfil.postal_code, localidade: alvo.perfil.locality,
   });
   if (!r.ok) {
+    await registarCegid('cegid_ficha_falhou', `NIF ${alvo.perfil.nif} · ${r.nifInvalido ? 'NIF recusado' : r.erro}`, alvo.conta, processo);
     return { ok: false, erro: r.nifInvalido ? `O Cegid recusou o NIF ${alvo.perfil.nif}. Confirme-o com o cliente.` : r.erro };
   }
   const id = (r.dados as { data?: { id?: string }; id?: string }).data?.id || (r.dados as { id?: string }).id;
+  await registarCegid('cegid_ficha', `NIF ${alvo.perfil.nif}${id ? ` · cliente Cegid ${id}` : ''} · pelo gabinete`, alvo.conta, processo);
   return { ok: true, aviso: 'Ficha de cliente criada no Cegid.', detalhe: id ? `ID ${id}` : undefined };
 }
 
@@ -190,6 +201,7 @@ export async function emitirFaturaCegid(processo: string): Promise<Resposta> {
   const total = pago?.amount_cents ?? 100;
   const r = await emitirFaturaRecibo({ nif: alvo.perfil.nif, nome: alvo.nome, descricao: 'IRS 2026', totalCents: total });
   if (!r.ok) return { ok: false, erro: r.nifInvalido ? `O Cegid recusou o NIF ${alvo.perfil.nif}.` : r.erro };
+  await registarCegid('cegid_fatura', `${(total / 100).toFixed(2).replace('.', ',')} € · NIF ${alvo.perfil.nif} · em preparação`, alvo.conta, processo);
   return {
     ok: true,
     aviso: pago

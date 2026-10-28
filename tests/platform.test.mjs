@@ -9,7 +9,7 @@ test('production registration, administration, quotations, checkout and private 
  const db=new PGlite();
  try{
   await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create schema storage;
-  create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz,raw_user_meta_data jsonb not null default '{}',deleted_at timestamptz);
+  create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz,raw_user_meta_data jsonb not null default '{}',deleted_at timestamptz,created_at timestamptz not null default now(),last_sign_in_at timestamptz);
   create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
   grant usage on schema auth,storage to authenticated;grant execute on function auth.uid() to authenticated;
   create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
@@ -179,6 +179,23 @@ test('production registration, administration, quotations, checkout and private 
    await assert.rejects(db.query('select * from public.integration_secrets'));
    await actor(ids.staff);await db.query('select public.set_staff_access($1,false)',[professional]);
    await actor(professional);assert.equal((await db.query('select * from public.irs_cases')).rows.length,0);
+  });
+  await t.test('full deletion removes the owned account and everything hanging from it, confirmed or not',async()=>{
+   await actor(ids.staff);
+   const before=(await db.query('select count(*)::int as n from public.client_accounts')).rows[0].n;
+   const contas=(await db.query("select account_id from public.account_access where user_id=$1 and role='owner'",[ids.b])).rows.map(r=>r.account_id);
+   assert.ok(contas.length>0);
+   await actor(ids.a);await assert.rejects(db.query('select public.eliminar_utilizador($1)',[ids.b]));
+   await actor(ids.staff);const r=(await db.query('select public.eliminar_utilizador($1) as r',[ids.b])).rows[0].r;
+   assert.equal(r.contas,contas.length);
+   for(const tabela of ['irs_cases','people','income_records','documents','messages','irs_checkouts','account_access']){
+    assert.equal((await db.query(`select count(*)::int as n from public.${tabela} where account_id = any($1)`,[contas])).rows[0].n,0,tabela);
+   }
+   assert.equal((await db.query('select count(*)::int as n from public.client_accounts')).rows[0].n,before-contas.length);
+   assert.equal((await db.query('select count(*)::int as n from public.profiles where id=$1',[ids.b])).rows[0].n,0);
+   // Um utilizador que nunca confirmou o email também sai.
+   await db.query('select public.eliminar_utilizador($1)',[ids.unconfirmed]);
+   assert.equal((await db.query('select count(*)::int as n from public.profiles where id=$1',[ids.unconfirmed])).rows[0].n,0);
   });
  }finally{await db.close();}
 });
