@@ -573,39 +573,61 @@
 }
 
 
-/* A transição depois do login: a marca entra, cumprimenta, e a cortina sobe
-   para revelar o painel que já está carregado por baixo. */
+/* A transição da entrada: o mesmo ecrã do clique em Entrar até o painel
+   estar desenhado. A marca não se mexe entre os três tempos; só a frase muda,
+   e no fim a cortina sobe para revelar o painel. */
 @layer components {
   .chegada {
     position: fixed; inset: 0; z-index: 200;
     display: grid; place-items: center;
-    background: radial-gradient(120% 90% at 50% 30%, #143257 0%, #0A2344 55%, #06172E 100%);
+    padding: var(--e-5);
+    background: radial-gradient(120% 90% at 50% 40%, #143257 0%, #0A2344 55%, #06172E 100%);
     color: #fff;
-    animation: chegada-cortina .75s cubic-bezier(.7,0,.2,1) forwards paused;
+    animation: chegada-cortina .7s cubic-bezier(.7,0,.2,1) forwards paused;
   }
   .chegada[data-fase='sair'] { animation-play-state: running; }
-  .chegada-centro { display: grid; justify-items: center; gap: 1.1rem; }
-  .chegada-marca {
-    inline-size: clamp(7rem, 22vw, 10rem); block-size: auto;
-    animation: chegada-marca .7s cubic-bezier(.2,.9,.25,1.15) both;
+  /* Só o primeiro tempo entra: os outros já encontram o ecrã montado. */
+  .chegada[data-entrada] { animation: chegada-aparece .22s ease-out both; }
+  .chegada-centro {
+    display: grid; justify-items: center; align-content: center;
+    grid-template-rows: auto 2.4rem 3px; row-gap: 1.25rem;
+    inline-size: min(100%, 22rem);
+    /* Os três elementos juntos ficam ligeiramente acima do meio, onde o olho
+       procura o centro. */
+    margin-block-end: 6vh;
   }
+  .chegada-marca { display: block; inline-size: clamp(7.5rem, 24vw, 10rem); block-size: auto; }
+  .chegada[data-entrada] .chegada-marca { animation: chegada-marca .5s cubic-bezier(.2,.9,.25,1.1) both; }
   .chegada-texto {
-    margin: 0; font-family: var(--fonte-titulo); font-weight: 700;
-    font-size: clamp(1.25rem, 3.4vw, 1.75rem); letter-spacing: -.01em;
-    animation: chegada-texto .55s ease-out .35s both;
+    margin: 0; align-self: center;
+    font-family: var(--fonte-titulo); font-weight: 700; line-height: 1.2; text-align: center;
+    font-size: clamp(1.25rem, 3.4vw, 1.65rem); letter-spacing: -.01em;
+    animation: chegada-texto .4s ease-out both;
   }
   .chegada-barra {
     display: block; inline-size: 9rem; block-size: 3px; border-radius: 999px;
     background: linear-gradient(90deg, #2867F8, #7FA8FF);
     transform-origin: left center;
-    animation: chegada-barra .8s cubic-bezier(.6,0,.2,1) .3s both;
+    animation: chegada-barra .9s cubic-bezier(.6,0,.2,1) both;
   }
-  @keyframes chegada-marca { from { opacity: 0; transform: scale(.82) translateY(8px); } to { opacity: 1; transform: none; } }
-  @keyframes chegada-texto { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  .chegada-barra[data-espera] {
+    background:
+      linear-gradient(90deg, transparent, #7FA8FF 50%, transparent) no-repeat,
+      rgba(255,255,255,.14);
+    background-size: 45% 100%, 100% 100%;
+    animation: chegada-espera 1.1s ease-in-out infinite;
+  }
+  @keyframes chegada-aparece { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes chegada-marca { from { opacity: 0; transform: scale(.9); } to { opacity: 1; transform: none; } }
+  @keyframes chegada-texto { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
   @keyframes chegada-barra { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+  @keyframes chegada-espera { from { background-position: -70% 0, 0 0; } to { background-position: 170% 0, 0 0; } }
   @keyframes chegada-cortina {
     from { clip-path: inset(0 0 0 0); }
     to { clip-path: inset(0 0 100% 0); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .chegada, .chegada *, .chegada-barra[data-espera] { animation: none !important; }
   }
 }
 

@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { Submeter } from '@/components/forms';
+import { AEntrar } from '@/components/chegada';
 import { EcraAutenticacao } from '@/lib/auth-view';
 import { signIn } from '@/lib/auth-actions';
 
@@ -27,6 +28,7 @@ export default async function Entrar({ searchParams }: { searchParams: Promise<{
           <input name="password" type="password" className="entrada" autoComplete="current-password" required maxLength={128} />
         </label>
         <Submeter aDecorrer="A entrar…">Entrar</Submeter>
+        <AEntrar />
       </form>
     </EcraAutenticacao>
   );

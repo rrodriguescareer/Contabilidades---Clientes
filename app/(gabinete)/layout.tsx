@@ -1,3 +1,4 @@
+import { cookies } from 'next/headers';
 import { session } from '@/lib/auth';
 import { Lateral } from '@/components/consola';
 import { Chegada } from '@/components/chegada';
@@ -12,7 +13,7 @@ export default async function LayoutGabinete({ children }: { children: React.Rea
   const administrador = context.email.toLowerCase() === 'contabilidade.rubenrodrigues@gmail.com';
   return (
     <div className={e.consola}>
-      <Chegada nome={context.profile.full_name || null} />
+      <Chegada ativo={(await cookies()).get('rr_chegada')?.value === '1'} nome={context.profile.full_name || null} />
       <Lateral email={user.email} administrador={administrador} />
       <div className={e.corpo}>{children}</div>
     </div>

@@ -95,18 +95,25 @@
   font-size: .78rem;
   font-weight: 750;
 }
+/* Sair: a toda a largura do menu, fácil de encontrar e de acertar. */
 .sair {
-  justify-self: start;
-  padding: .4rem .8rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .55rem;
+  inline-size: 100%;
+  padding: .7rem 1rem;
   border: 1px solid var(--linha-forte);
-  border-radius: 999px;
+  border-radius: .7rem;
   background: var(--superficie);
   color: var(--texto);
+  font: inherit;
   font-size: var(--t-sm);
-  font-weight: 600;
+  font-weight: 650;
   cursor: pointer;
+  transition: background-color .15s ease, border-color .15s ease, color .15s ease;
 }
-.sair:hover { border-color: var(--critico); color: var(--critico); }
+.sair:hover { border-color: var(--critico); color: var(--critico); background: var(--critico-suave); }
 
 /* ---------------- Conteúdo ---------------- */
 .corpo { display: flex; flex-direction: column; min-inline-size: 0; }

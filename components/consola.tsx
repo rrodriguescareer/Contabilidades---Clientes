@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { cookies } from 'next/headers';
 import { Suspense } from 'react';
 import { contagensDoGabinete } from '@/lib/irs-actions';
 import { Chegada } from './chegada';
@@ -31,7 +32,13 @@ export async function Lateral({ email, administrador }: { email: string; adminis
           </div>
         </div>
         <form action={signOut}>
-          <button className={e.sair}>Sair</button>
+          <button className={e.sair}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+                 strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3" /><path d="M10 17l-5-5 5-5" /><path d="M5 12h11" />
+            </svg>
+            <span>Sair</span>
+          </button>
         </form>
       </div>
     </aside>
@@ -39,7 +46,7 @@ export async function Lateral({ email, administrador }: { email: string; adminis
 }
 
 /* As páginas da gestão: menu, topo com o título e o conteúdo. */
-export function Consola({
+export async function Consola({
   email,
   administrador,
   children,
@@ -50,7 +57,7 @@ export function Consola({
 }) {
   return (
     <div className={e.consola}>
-      <Chegada />
+      <Chegada ativo={(await cookies()).get('rr_chegada')?.value === '1'} />
       <Lateral email={email} administrador={administrador} />
       <div className={e.corpo}>
         <header className={e.topo}>
