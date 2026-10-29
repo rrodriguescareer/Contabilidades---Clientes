@@ -29,7 +29,7 @@ async function pedir<T>(caminho: string, corpo?: Record<string, string>, idempot
 /** Devolve parte ou a totalidade de um pagamento feito por uma sessão do
     Checkout. A chave de idempotência é o id do reembolso: repetir o pedido
     nunca devolve duas vezes. */
-export async function reembolsarNaStripe(sessao: string, cents: number, reembolso: string) {
+export async function reembolsarNaStripe(sessao: string, cents: number, reembolso: string, pagamento = '', motivo = '') {
   if (!/^cs_[A-Za-z0-9_]+$/.test(sessao)) return { ok: false as const, erro: 'Sessão da Stripe inválida.' };
   const lida = await pedir<{ payment_intent?: string | { id: string } }>(`/checkout/sessions/${sessao}`);
   if (!lida.ok) return lida;
@@ -41,6 +41,9 @@ export async function reembolsarNaStripe(sessao: string, cents: number, reembols
     amount: String(cents),
     reason: 'requested_by_customer',
     'metadata[reembolso]': reembolso,
+    // Que pagamento se devolve e porquê: fica escrito no reembolso, na Stripe.
+    ...(pagamento ? { 'metadata[pagamento]': pagamento } : {}),
+    ...(motivo ? { 'metadata[motivo]': motivo.slice(0, 450) } : {}),
   }, `reembolso-${reembolso}`);
 }
 

@@ -8,6 +8,7 @@ import {
   origemDasCredenciais, temCredenciais, testarLigacao, type FaturaCegid,
 } from './cegid';
 import { expirarSessao, reembolsarNaStripe } from './stripe-gestao';
+import { enviarEmail, eurosTexto, PORTAL, primeiroNome } from './email';
 
 /* As ações do gabinete do IRS, agora dentro da gestão. Vieram da plataforma
    do IRS com a consola; a gestão só deixa entrar quem é do gabinete (o
@@ -48,8 +49,48 @@ export async function avancarProcesso(
     sentido: destino === 'filed' ? sentido : null,
   });
   if (error) return { ok: false, erro: error.message };
+  await avisarEtapa(processo, destino, nota, cents, sentido);
   revalidatePath('/irs');
   return { ok: true };
+}
+
+/* As etapas que o cliente precisa de saber por email. As outras ficam no
+   acompanhamento, sem encher a caixa de correio. */
+async function avisarEtapa(processo: string, destino: string, nota: string, cents: number | null, sentido: string) {
+  const alvo = await titularDoProcesso(processo);
+  if (!alvo?.perfil?.email) return;
+  const ola = `Olá${primeiroNome(alvo.nome) ? `, ${primeiroNome(alvo.nome)}` : ''}.`;
+  const botao = { texto: 'Ver o acompanhamento', url: `${PORTAL}/app?separador=progresso` };
+  const textos: Record<string, { assunto: string; titulo: string; paragrafos: string[]; destaque?: { rotulo: string; valor: string } }> = {
+    returned: {
+      assunto: 'O seu processo de IRS foi devolvido para correção',
+      titulo: 'Faltam elementos no seu processo',
+      paragrafos: [ola, 'O processo foi devolvido para correção. Complete o que é pedido e volte a submeter no portal.',
+        ...(nota.trim() ? [`Nota do contabilista: ${nota.trim()}`] : [])],
+    },
+    filed: {
+      assunto: 'A sua declaração de IRS foi entregue',
+      titulo: 'Declaração entregue na Autoridade Tributária',
+      paragrafos: [ola, 'A declaração de IRS foi entregue na Autoridade Tributária. Segue-se a validação e a liquidação, que acompanhamos por si.'],
+      ...(cents != null ? { destaque: { rotulo: sentido === 'refund' ? 'Reembolso apurado' : 'Imposto a pagar', valor: eurosTexto(cents) } } : {}),
+    },
+    assessed: {
+      assunto: 'A liquidação do seu IRS foi emitida',
+      titulo: 'Liquidação emitida',
+      paragrafos: [ola, 'A Autoridade Tributária emitiu a liquidação do seu IRS. O valor apurado está confirmado no portal.'],
+    },
+    closed: {
+      assunto: 'O seu processo de IRS está concluído',
+      titulo: 'Processo concluído',
+      paragrafos: [ola, 'O seu processo de IRS está concluído. Obrigado pela confiança. Os documentos continuam disponíveis no portal.'],
+    },
+  };
+  const t = textos[destino];
+  if (!t) return;
+  await enviarEmail({
+    chave: `etapa:${processo}:${destino}:${new Date().toISOString().slice(0, 16)}`,
+    para: alvo.perfil.email, ...t, botao, conta: alvo.conta, processo,
+  });
 }
 
 export async function prontidaoDoProcesso(processo: string) {
@@ -98,10 +139,23 @@ export async function enviarMensagem(
   const corpo = String(form.get('corpo') || '').trim().slice(0, 4000);
   if (!uuid(conta) || !uuid(processo)) return { ok: false, erro: 'Processo inválido.' };
   if (!corpo) return { ok: false, erro: 'Escreva a mensagem.' };
-  const { error } = await client
+  const { data: msg, error } = await client
     .from('messages')
-    .insert({ account_id: conta, case_id: processo, body: corpo, author_id: user.id });
+    .insert({ account_id: conta, case_id: processo, body: corpo, author_id: user.id })
+    .select('id').single();
   if (error) return { ok: false, erro: 'Não foi possível enviar.' };
+  const alvo = await titularDoProcesso(processo);
+  if (alvo?.perfil?.email && msg?.id) {
+    await enviarEmail({
+      chave: `mensagem:${msg.id}`, para: alvo.perfil.email,
+      assunto: 'Tem uma nova mensagem sobre o seu IRS',
+      titulo: 'Nova mensagem do contabilista',
+      paragrafos: [`Olá${primeiroNome(alvo.nome) ? `, ${primeiroNome(alvo.nome)}` : ''}.`,
+        corpo.length > 600 ? `${corpo.slice(0, 600)}…` : corpo],
+      botao: { texto: 'Responder no portal', url: `${PORTAL}/app?separador=mensagens` },
+      conta, processo,
+    });
+  }
   return { ok: true };
 }
 
@@ -235,7 +289,7 @@ export async function reembolsar(checkout: string, valor: string, motivo: string
   const { data: anteriores } = await adminClient().from('reembolsos')
     .select('amount_cents').eq('checkout_id', checkout).eq('estado', 'feito');
   const parcial = cents + (anteriores || []).reduce((t, r) => t + r.amount_cents, 0) < (k?.amount_cents || 0) || (anteriores || []).length > 0;
-  const stripe = await reembolsarNaStripe(k?.provider_order_id || '', cents, id);
+  const stripe = await reembolsarNaStripe(k?.provider_order_id || '', cents, id, checkout, motivo.trim());
   if (!stripe.ok) {
     await client.rpc('concluir_reembolso', { p_reembolso: id, p_stripe_id: null, p_stripe_estado: null, p_cegid: null, p_cegid_erro: null, p_falhou: true });
     await registarCegid('reembolso_falhou', `${euros(cents)} · ${stripe.erro}`, k?.account_id || null, k?.case_id || '');
@@ -247,6 +301,21 @@ export async function reembolsar(checkout: string, valor: string, motivo: string
     p_reembolso: id, p_stripe_id: stripe.dados.id, p_stripe_estado: stripe.dados.status,
     p_cegid: nota.ok ? nota.id : null, p_cegid_erro: nota.ok ? null : nota.erro, p_falhou: false,
   });
+  const cliente = await titularDoProcesso(k?.case_id || '');
+  if (cliente?.perfil?.email) {
+    await enviarEmail({
+      chave: `reembolso:${id}`, para: cliente.perfil.email,
+      assunto: `Reembolso de ${euros(cents)} processado`,
+      titulo: 'Foi processado um reembolso',
+      paragrafos: [`Olá${primeiroNome(cliente.nome) ? `, ${primeiroNome(cliente.nome)}` : ''}.`,
+        `Foi processado um reembolso relativo a ${k?.tipo === 'extra' ? `«${k?.descricao || 'pagamento adicional'}»` : 'à preparação do seu IRS'}.`,
+        `Motivo: ${motivo.trim()}`,
+        'O valor é devolvido pelo mesmo meio de pagamento, normalmente em 5 a 10 dias úteis. A nota de crédito correspondente é emitida em seu nome.'],
+      destaque: { rotulo: 'Valor reembolsado', valor: euros(cents) },
+      botao: { texto: 'Ver no portal', url: `${PORTAL}/app?separador=pagamento` },
+      conta: k?.account_id || null, processo: k?.case_id || null,
+    });
+  }
   await registarCegid('reembolso',
     `${euros(cents)} · Stripe ${stripe.dados.id} (${stripe.dados.status}) · ${nota.ok ? `nota de crédito em rascunho no Cegid ${nota.id}` : `nota de crédito por criar: ${nota.erro}`} · motivo: ${motivo.trim()}`,
     k?.account_id || null, k?.case_id || '');
@@ -259,6 +328,7 @@ export async function reembolsar(checkout: string, valor: string, motivo: string
       nota.ok
         ? `Cegid: nota de crédito n.º ${nota.id} em rascunho, a ${parcial ? 'corrigir' : 'anular'} a fatura de origem.`
         : `Cegid: a nota de crédito não foi criada — ${nota.erro}`,
+      cliente?.perfil?.email ? `Email: aviso enviado para ${cliente.perfil.email}.` : 'Email: o cliente não tem email no perfil.',
     ],
   };
 }
@@ -326,11 +396,23 @@ export async function pedirPagamentoExtra(processo: string, valor: string, descr
     cegid = r.ok ? `Cegid: fatura-recibo n.º ${documento || '—'} guardada em rascunho.` : `Cegid: a fatura-recibo não foi criada — ${r.erro}`;
   }
   await registarCegid('pagamento_extra', `${euros(cents)} · ${descricao.trim()}`, alvo?.conta || null, processo);
+  const avisado = alvo?.perfil?.email ? await enviarEmail({
+    chave: `extra:${id}`, para: alvo.perfil.email,
+    assunto: `Pagamento adicional pedido — ${euros(cents)}`,
+    titulo: 'Foi pedido um pagamento adicional',
+    paragrafos: [`Olá${primeiroNome(alvo.nome) ? `, ${primeiroNome(alvo.nome)}` : ''}.`,
+      'No âmbito do seu processo de IRS, foi combinado o seguinte pagamento adicional:',
+      'Pode pagar de forma segura no separador Pagamento do portal (cartão, MB WAY, Multibanco e outros).'],
+    destaque: { rotulo: descricao.trim(), valor: euros(cents) },
+    botao: { texto: 'Pagar no portal', url: `${PORTAL}/app?separador=pagamento` },
+    conta: alvo.conta, processo,
+  }) : false;
   revalidatePath('/irs');
   return {
     ok: true, tom: tudo ? 'ok' : 'atencao',
     titulo: `Pagamento de ${euros(cents)} pedido`,
-    detalhes: [`Portal: o pedido aparece ao cliente no separador Pagamento.`, cegid],
+    detalhes: [`Portal: o pedido aparece ao cliente no separador Pagamento.`, cegid,
+      avisado ? `Email: enviado para ${alvo?.perfil?.email}.` : 'Email: não foi enviado (sem email do cliente ou envio indisponível).'],
   };
 }
 
