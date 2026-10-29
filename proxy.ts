@@ -33,4 +33,4 @@ export async function proxy(request: NextRequest) {
   response.headers.set('Cache-Control','private, no-store');
   return response;
 }
-export const config = { matcher: ['/app/:path*','/irs','/irs/:path*','/relatorio/:path*','/nova-password','/utilizadores','/empresas','/descontos','/pagamentos','/configuracao','/faturacao','/precos','/avisos'] };
+export const config = { matcher: ['/app/:path*','/irs','/irs/:path*','/relatorio/:path*','/nova-password','/utilizadores','/empresas','/empresas/:path*','/descontos','/pagamentos','/configuracao','/faturacao','/precos','/avisos'] };

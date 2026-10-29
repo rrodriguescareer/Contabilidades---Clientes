@@ -1,7 +1,7 @@
 import { ownerSession as session } from '@/lib/auth';
 import { Avisos, Secao } from '@/components/consola';
 import { Submeter } from '@/components/forms';
-import { saveCompanyIntegration } from '@/lib/integration-actions';
+import Link from 'next/link';
 import { createCompany, associateCompany, toggleCompanyAccess } from '@/lib/management-actions';
 import e from '@/components/consola.module.css';
 
@@ -9,24 +9,33 @@ export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Empresas' };
 
 type Ligacao = { user_id: string; active: boolean; profile: { email: string } | null };
+type Estado = { id: string; data_corte: string | null; tem_cegid: boolean; documentos: number; por_ver: number; atrasados: number; completo: boolean | null; mensagens: number };
+type Portal = { mes_em_curso: string; prazo: string; empresas: Estado[] };
+
+const data = (iso: string | null) => (iso ? iso.slice(0, 10).split('-').reverse().join('/') : null);
 
 export default async function Empresas({ searchParams }: { searchParams: Promise<{ erro?: string; mensagem?: string }> }) {
   const { client } = await session();
   const parametros = await searchParams;
 
-  const { data: empresas, error } = await client
-    .from('companies')
-    .select('id,name,nif,active,company_users(user_id,active,profile:profiles(email))')
-    .order('created_at', { ascending: false })
-    .limit(100);
+  const [{ data: empresas, error }, { data: bruto }] = await Promise.all([
+    client
+      .from('companies')
+      .select('id,name,nif,active,company_users(user_id,active,profile:profiles(email))')
+      .order('created_at', { ascending: false })
+      .limit(100),
+    client.rpc('gestao_empresas'),
+  ]);
+  const portal = bruto as Portal | null;
+  const estado = (id: string) => portal?.empresas.find((x) => x.id === id);
 
   return (
     <>
       <Avisos erro={parametros.erro} mensagem={parametros.mensagem} />
 
       <p className="aviso">
-        As empresas e os respetivos acessos ficam preparados para a plataforma Empresas. O módulo operacional
-        dessa plataforma é desenvolvido depois do IRS.
+        Cada empresa entra no portal Empresas com a sua data de corte e a sua ligação ao Cegid. Para um cliente o ver,
+        precisa do acesso Empresas (em Utilizadores) e de estar associado aqui. Os documentos de cada mês chegam até ao dia 10.
       </p>
 
       <Secao titulo="Criar empresa" nota="A empresa fica logo associada ao cliente que indicar.">
@@ -69,6 +78,21 @@ export default async function Empresas({ searchParams }: { searchParams: Promise
                     <span className={e.fichaNome}>{empresa.name}</span>
                     <span className={e.fichaEmail}>NIF {empresa.nif}</span>
                     <span className={e.fichaEtiquetas}>
+                      {(() => {
+                        const x = estado(empresa.id);
+                        if (!x) return null;
+                        return (
+                          <>
+                            <span className={`etiqueta ${x.data_corte ? 'etiqueta-positivo' : 'etiqueta-atencao'}`}>
+                              {x.data_corte ? `Corte ${data(x.data_corte)}` : 'Sem data de corte'}
+                            </span>
+                            {!x.tem_cegid && <span className="etiqueta etiqueta-atencao">Sem Cegid</span>}
+                            {x.por_ver > 0 && <span className="etiqueta etiqueta-acao">{x.por_ver} por ver</span>}
+                            {x.atrasados > 0 && <span className="etiqueta etiqueta-critico">{x.atrasados} fora do prazo</span>}
+                            {x.mensagens > 0 && <span className="etiqueta etiqueta-acao">{x.mensagens} {x.mensagens === 1 ? 'mensagem' : 'mensagens'}</span>}
+                          </>
+                        );
+                      })()}
                       <span className="etiqueta">{ligacoes.length} {ligacoes.length === 1 ? 'acesso' : 'acessos'}</span>
                       <span className={`etiqueta ${empresa.active ? 'etiqueta-positivo' : 'etiqueta-critico'}`}>
                         {empresa.active ? 'Ativa' : 'Inativa'}
@@ -109,28 +133,21 @@ export default async function Empresas({ searchParams }: { searchParams: Promise
                       </div>
 
                       <div className={e.fichaCaixa}>
-                        <h3>Cegid Business</h3>
-                        <form action={saveCompanyIntegration} className="pilha pilha-3">
-                          <input name="company" type="hidden" value={empresa.id} />
-                          <label className="campo">
-                            <span>Credencial API desta empresa</span>
-                            <input
-                              name="credential"
-                              type="password"
-                              className="entrada"
-                              autoComplete="new-password"
-                              required
-                              maxLength={16384}
-                            />
-                            <small>
-                              Cada empresa tem a sua credencial, guardada cifrada. Este campo nunca mostra a chave
-                              já gravada.
-                            </small>
-                          </label>
-                          <Submeter className="btn btn-secundario btn-sm" aDecorrer="A guardar…">
-                            Guardar credencial
-                          </Submeter>
-                        </form>
+                        <h3>Portal Empresas</h3>
+                        {(() => {
+                          const x = estado(empresa.id);
+                          return (
+                            <p className="pequeno">
+                              {x?.data_corte ? `Contabilidade fechada até ${data(x.data_corte)}.` : 'Sem data de corte: o cliente ainda não tira saldos nem balancetes.'}
+                              <br />
+                              {x?.tem_cegid ? 'Ligada ao Cegid.' : 'Ainda sem credenciais do Cegid.'}
+                              {portal && x ? ` ${x.documentos} documentos do mês em curso${x.completo ? ', dado como completo' : ''}.` : ''}
+                            </p>
+                          );
+                        })()}
+                        <Link className="btn btn-sm" href={`/empresas/${empresa.id}`}>
+                          Data de corte, Cegid e documentos
+                        </Link>
                       </div>
                     </div>
                   </div>
