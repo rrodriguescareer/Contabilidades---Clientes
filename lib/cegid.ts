@@ -344,7 +344,7 @@ export async function emitirNotaCredito(nota: {
   origemId?: string | null; origemRef?: string | null;
 }) {
   const origem = nota.origemId
-    ? { parent_documents_ids: [nota.origemId] }
+    ? { parent_documents_ids: [/^\d+$/.test(nota.origemId) ? Number(nota.origemId) : nota.origemId] }
     : nota.origemRef ? { parent_document_reference: nota.origemRef } : {};
   return chamar<Record<string, unknown>>('/v1/commercial_sales_documents', {
     metodo: 'POST',
@@ -363,4 +363,58 @@ export async function emitirNotaCredito(nota: {
       ],
     },
   });
+}
+
+/* ---------------------------------------- faturas de um cliente no Cegid */
+
+export type FaturaCegid = { id: string; tipo: string; data: string; referencia: string; totalCents: number | null; rascunho: boolean };
+
+type DocumentoBruto = Record<string, unknown> & { lines?: Record<string, unknown>[] };
+
+/** As faturas (FR, FT, FS) de um contribuinte no Cegid, da mais recente para a
+    mais antiga. É daqui que a nota de crédito escolhe o documento que anula
+    ou corrige. A lista da API v1 não traz o total nem o número em todos os
+    casos: o total sai das linhas e o número, quando vem, entra na referência. */
+export async function faturasDoCliente(nif: string): Promise<Resultado<FaturaCegid[]>> {
+  const filtro = `/v1/commercial_sales_documents?filter[customer_tax_registration_number]=${encodeURIComponent(nif)}`;
+  let r = await chamar<unknown>(filtro);
+  if (!r.ok) r = await chamar<unknown>('/v1/commercial_sales_documents');
+  if (!r.ok) return r;
+
+  const dados = r.dados as unknown;
+  const lista: DocumentoBruto[] = Array.isArray(dados)
+    ? dados as DocumentoBruto[]
+    : Array.isArray((dados as { data?: unknown[] })?.data)
+      ? ((dados as { data: { id: unknown; attributes?: Record<string, unknown> }[] }).data)
+          .map((x) => ({ id: x.id, ...(x.attributes || {}) }) as DocumentoBruto)
+      : [];
+
+  const faturas = lista
+    .filter((d) => String(d.customer_tax_registration_number || '') === nif)
+    .filter((d) => ['FR', 'FT', 'FS'].includes(String(d.document_type || '').toUpperCase()))
+    // Anuladas (estado 4 na API) não se corrigem.
+    .filter((d) => String(d.status ?? d.state ?? '') !== '4' && !/void|anulad/i.test(String(d.status ?? d.state ?? '')))
+    .map((d) => {
+      const tipo = String(d.document_type).toUpperCase();
+      const numero = d.number ?? d.document_number ?? d.sequential_number ?? null;
+      const prefixo = d.document_series_prefix ? String(d.document_series_prefix) : '';
+      const linhas = Array.isArray(d.lines) ? d.lines : [];
+      const declarado = d.total ?? d.gross_total ?? d.total_amount ?? null;
+      const total = declarado != null && Number.isFinite(Number(declarado))
+        ? Math.round(Number(declarado) * 100)
+        : linhas.length
+          ? Math.round(linhas.reduce((t, l) => t + Number(l.quantity ?? 1) * Number(l.unit_price ?? 0), 0) * 100)
+          : null;
+      const rascunho = numero == null;
+      return {
+        id: String(d.id),
+        tipo,
+        data: String(d.date || ''),
+        referencia: rascunho ? `${tipo} em preparação (id ${d.id})` : `${tipo} ${prefixo ? `${prefixo}/` : ''}${numero}`,
+        totalCents: total,
+        rascunho,
+      };
+    })
+    .sort((a, b) => (a.data < b.data ? 1 : a.data > b.data ? -1 : Number(b.id) - Number(a.id)));
+  return { ok: true, dados: faturas };
 }

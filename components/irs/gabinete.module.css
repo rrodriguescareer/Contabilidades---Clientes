@@ -626,3 +626,6 @@ a.item { text-decoration: none; }
 @media (max-width: 640px) {
   .notificacao { inset-inline: 1rem; inset-block-end: 1rem; inline-size: auto; }
 }
+.escolhaFatura { display: grid; gap: var(--e-3); grid-column: 1 / -1; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); align-items: end; }
+.escolhaFatura > p { grid-column: 1 / -1; margin: 0; }
+.efeitoNota { margin: 0; padding: .5rem .75rem; border-radius: .6rem; background: var(--acao-suave); color: var(--acao-forte); font-size: var(--t-sm); font-weight: 600; }

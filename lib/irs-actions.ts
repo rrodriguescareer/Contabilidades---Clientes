@@ -4,8 +4,8 @@ import { session } from './auth';
 import { adminClient } from './admin-client';
 import { uuid } from './data';
 import {
-  criarFichaCliente, emitirFaturaRecibo, emitirNotaCredito, guardarCredenciais, idDoDocumento,
-  origemDasCredenciais, temCredenciais, testarLigacao,
+  criarFichaCliente, emitirFaturaRecibo, emitirNotaCredito, faturasDoCliente, guardarCredenciais, idDoDocumento,
+  origemDasCredenciais, temCredenciais, testarLigacao, type FaturaCegid,
 } from './cegid';
 import { expirarSessao, reembolsarNaStripe } from './stripe-gestao';
 
@@ -214,7 +214,7 @@ const centimos = (texto: string) => {
 /** Reembolso parcial ou total. Primeiro o dinheiro (Stripe), depois o
     documento (nota de crédito em rascunho no Cegid). Se o Cegid falhar, o
     reembolso fica feito e a nota pode ser criada outra vez. */
-export async function reembolsar(checkout: string, valor: string, motivo: string, origemRef = ''): Promise<Resposta> {
+export async function reembolsar(checkout: string, valor: string, motivo: string, origemRef = '', origemId = ''): Promise<Resposta> {
   const { client } = await session();
   if (!uuid(checkout)) return { ok: false, erro: 'Pagamento inválido.' };
   const cents = centimos(valor);
@@ -226,7 +226,15 @@ export async function reembolsar(checkout: string, valor: string, motivo: string
   if (error || typeof id !== 'string') return { ok: false, erro: error?.code === '22023' ? error.message : 'Não foi possível registar o reembolso.' };
 
   const { data: k } = await adminClient().from('irs_checkouts')
-    .select('provider_order_id, case_id, account_id, cegid_documento, descricao, tipo').eq('id', checkout).single();
+    .select('provider_order_id, case_id, account_id, cegid_documento, descricao, tipo, amount_cents').eq('id', checkout).single();
+  // A fatura escolhida fica ligada ao pagamento: os reembolsos seguintes já a sabem.
+  const fatura = origemId.trim() || k?.cegid_documento || null;
+  if (origemId.trim() && !k?.cegid_documento) {
+    await client.rpc('guardar_cegid_do_pagamento', { p_checkout: checkout, p_documento: origemId.trim() });
+  }
+  const { data: anteriores } = await adminClient().from('reembolsos')
+    .select('amount_cents').eq('checkout_id', checkout).eq('estado', 'feito');
+  const parcial = cents + (anteriores || []).reduce((t, r) => t + r.amount_cents, 0) < (k?.amount_cents || 0) || (anteriores || []).length > 0;
   const stripe = await reembolsarNaStripe(k?.provider_order_id || '', cents, id);
   if (!stripe.ok) {
     await client.rpc('concluir_reembolso', { p_reembolso: id, p_stripe_id: null, p_stripe_estado: null, p_cegid: null, p_cegid_erro: null, p_falhou: true });
@@ -234,7 +242,7 @@ export async function reembolsar(checkout: string, valor: string, motivo: string
     return { ok: false, erro: `A Stripe recusou o reembolso: ${stripe.erro}` };
   }
 
-  const nota = await notaDeCredito(k?.case_id || '', cents, motivo, k?.cegid_documento || null, origemRef, k?.descricao || null);
+  const nota = await notaDeCredito(k?.case_id || '', cents, motivo, fatura, origemRef, k?.descricao || null, parcial);
   await client.rpc('concluir_reembolso', {
     p_reembolso: id, p_stripe_id: stripe.dados.id, p_stripe_estado: stripe.dados.status,
     p_cegid: nota.ok ? nota.id : null, p_cegid_erro: nota.ok ? null : nota.erro, p_falhou: false,
@@ -248,21 +256,23 @@ export async function reembolsar(checkout: string, valor: string, motivo: string
     titulo: `Reembolso de ${euros(cents)} feito`,
     detalhes: [
       `Stripe: devolvido ao cliente (${stripe.dados.id}).`,
-      nota.ok ? `Cegid: nota de crédito n.º ${nota.id} guardada em rascunho.` : `Cegid: a nota de crédito não foi criada — ${nota.erro}`,
+      nota.ok
+        ? `Cegid: nota de crédito n.º ${nota.id} em rascunho, a ${parcial ? 'corrigir' : 'anular'} a fatura de origem.`
+        : `Cegid: a nota de crédito não foi criada — ${nota.erro}`,
     ],
   };
 }
 
 async function notaDeCredito(processo: string, cents: number, motivo: string,
-  origemId: string | null, origemRef: string, descricao: string | null) {
+  origemId: string | null, origemRef: string, descricao: string | null, parcial = true) {
   const alvo = await titularDoProcesso(processo);
   if (!alvo?.perfil?.nif) return { ok: false as const, erro: 'O cliente não tem NIF no perfil.' };
   if (!origemId && !origemRef.trim()) {
-    return { ok: false as const, erro: 'Falta o documento de origem: indique a referência da fatura-recibo (ex.: FR 2026/12).' };
+    return { ok: false as const, erro: 'Falta escolher a fatura que a nota de crédito anula ou corrige.' };
   }
   const r = await emitirNotaCredito({
     nif: alvo.perfil.nif, nome: alvo.nome, totalCents: cents, motivo: motivo.trim(),
-    descricao: `Reembolso — ${descricao || 'Preparação do IRS 2026'}`,
+    descricao: `${parcial ? 'Correção' : 'Anulação'} — ${descricao || 'Preparação do IRS 2026'}`,
     origemId, origemRef: origemRef.trim() || null,
   });
   if (!r.ok) return { ok: false as const, erro: r.nifInvalido ? `O Cegid recusou o NIF ${alvo.perfil.nif}.` : r.erro };
@@ -270,7 +280,7 @@ async function notaDeCredito(processo: string, cents: number, motivo: string,
 }
 
 /** Criar outra vez a nota de crédito de um reembolso já feito na Stripe. */
-export async function repetirNotaCredito(reembolso: string, origemRef = ''): Promise<Resposta> {
+export async function repetirNotaCredito(reembolso: string, origemRef = '', origemId = ''): Promise<Resposta> {
   const { client } = await session();
   if (!uuid(reembolso)) return { ok: false, erro: 'Reembolso inválido.' };
   const { data: r } = await adminClient().from('reembolsos')
@@ -279,7 +289,10 @@ export async function repetirNotaCredito(reembolso: string, origemRef = ''): Pro
   if (!r) return { ok: false, erro: 'Reembolso inexistente.' };
   if (r.cegid_documento) return { ok: true, aviso: 'A nota de crédito já existe.' };
   const k = (r as { irs_checkouts?: { cegid_documento?: string | null; descricao?: string | null } }).irs_checkouts;
-  const nota = await notaDeCredito(r.case_id, r.amount_cents, r.motivo, k?.cegid_documento || null, origemRef, k?.descricao || null);
+  if (origemId.trim() && !k?.cegid_documento) {
+    await client.rpc('guardar_cegid_do_pagamento', { p_checkout: r.checkout_id, p_documento: origemId.trim() });
+  }
+  const nota = await notaDeCredito(r.case_id, r.amount_cents, r.motivo, origemId.trim() || k?.cegid_documento || null, origemRef, k?.descricao || null);
   if (!nota.ok) {
     await client.rpc('concluir_reembolso', { p_reembolso: reembolso, p_stripe_id: null, p_stripe_estado: null, p_cegid: null, p_cegid_erro: nota.erro, p_falhou: false });
     return { ok: false, erro: nota.erro };
@@ -329,4 +342,25 @@ export async function anularPagamentoExtra(checkout: string): Promise<Resposta> 
   await expirarSessao(typeof sessao === 'string' ? sessao : null);
   revalidatePath('/irs');
   return { ok: true, tom: 'atencao', titulo: 'Pedido anulado', detalhes: ['Portal: o pedido deixou de aparecer ao cliente.', 'Cegid: se havia fatura-recibo em rascunho, apague-a lá.'] };
+}
+
+/** As faturas do cliente no Cegid, para a nota de crédito escolher a que anula
+    ou corrige. Vem já sugerida a que está ligada ao pagamento, ou a de valor
+    igual mais recente. */
+export async function faturasParaReembolso(checkout: string): Promise<
+  { ok: true; faturas: FaturaCegid[]; sugerida: string | null } | { ok: false; erro: string }
+> {
+  await session();
+  if (!uuid(checkout)) return { ok: false, erro: 'Pagamento inválido.' };
+  const { data: k } = await adminClient().from('irs_checkouts')
+    .select('case_id, amount_cents, cegid_documento').eq('id', checkout).single();
+  if (!k) return { ok: false, erro: 'Pagamento inexistente.' };
+  const alvo = await titularDoProcesso(k.case_id);
+  if (!alvo?.perfil?.nif) return { ok: false, erro: 'O cliente não tem NIF no perfil.' };
+  const r = await faturasDoCliente(alvo.perfil.nif);
+  if (!r.ok) return { ok: false, erro: `Não foi possível ler as faturas no Cegid: ${r.erro}` };
+  const sugerida = (k.cegid_documento && r.dados.some((f) => f.id === k.cegid_documento) ? k.cegid_documento : null)
+    || r.dados.find((f) => f.totalCents === k.amount_cents)?.id
+    || r.dados[0]?.id || null;
+  return { ok: true, faturas: r.dados, sugerida };
 }

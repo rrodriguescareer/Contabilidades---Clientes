@@ -2,8 +2,10 @@
 import { useActionState, useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { AvisoFlutuante, type Notificacao } from './notificacao';
 import {
-  anularPagamentoExtra, enviarMensagem, pedirPagamentoExtra, reembolsar, repetirNotaCredito, verSenhaFinancas,
+  anularPagamentoExtra, enviarMensagem, faturasParaReembolso, pedirPagamentoExtra, reembolsar, repetirNotaCredito,
+  verSenhaFinancas,
 } from '@/lib/irs-actions';
+import type { FaturaCegid } from '@/lib/cegid';
 import { emRecolha, posicao, estadoDe, type Prontidao } from '@/lib/fluxo';
 import { AMBITOS, DEDUCOES, SEPARADORES, pertence } from './separadores';
 import { Avanco } from './avanco';
@@ -592,8 +594,8 @@ function Pagamento({ checkout, movimentos, processo, aoMudar }:
                               {r.estado === 'feito' ? 'Devolvido' : r.estado === 'falhou' ? 'Recusado' : 'A processar'}
                             </span>
                             {r.estado === 'feito' && (r.cegid
-                              ? <span className={e.sub}>NC em rascunho · Cegid {r.cegid}</span>
-                              : <RepetirNota reembolso={r} aCorrer={aCorrer} executar={executar} temOrigem={Boolean(m.cegid)} />)}
+                              ? <span className={e.sub}>Nota de crédito em rascunho · Cegid {r.cegid}</span>
+                              : <RepetirNota reembolso={r} checkout={m.id} aCorrer={aCorrer} executar={executar} temOrigem={Boolean(m.cegid)} />)}
                           </span>
                         </li>
                       ))}
@@ -618,33 +620,7 @@ function Pagamento({ checkout, movimentos, processo, aoMudar }:
                   )}
 
                   {abertoPara === m.id && podeReembolsar && (
-                    <form className={e.formReembolso} onSubmit={(ev) => {
-                      ev.preventDefault();
-                      const f = new FormData(ev.currentTarget);
-                      const valor = String(f.get('valor') || '');
-                      if (!window.confirm(`Reembolsar ${valor} € na Stripe e criar a nota de crédito no Cegid?`)) return;
-                      executar(() => reembolsar(m.id, valor, String(f.get('motivo') || ''), String(f.get('origem') || '')));
-                    }}>
-                      <label className="campo">
-                        <span>Valor (máximo {euros(falta)})</span>
-                        <input name="valor" className="entrada" inputMode="decimal" required
-                               defaultValue={(falta / 100).toFixed(2).replace('.', ',')} />
-                      </label>
-                      <label className="campo">
-                        <span>Motivo</span>
-                        <input name="motivo" className="entrada" required minLength={3} maxLength={500}
-                               placeholder="Ex.: desconto acordado, serviço não prestado" />
-                      </label>
-                      {!m.cegid && (
-                        <label className="campo">
-                          <span>Fatura-recibo de origem no Cegid</span>
-                          <input name="origem" className="entrada" required placeholder="Ex.: FR 2026/12" maxLength={60} />
-                        </label>
-                      )}
-                      <div>
-                        <button type="submit" className="btn" disabled={aCorrer}>{aCorrer ? 'A processar…' : 'Reembolsar'}</button>
-                      </div>
-                    </form>
+                    <FormReembolso movimento={m} falta={falta} aCorrer={aCorrer} executar={executar} />
                   )}
                 </li>
               );
@@ -684,21 +660,115 @@ function Pagamento({ checkout, movimentos, processo, aoMudar }:
   );
 }
 
-function RepetirNota({ reembolso, aCorrer, executar, temOrigem }: {
-  reembolso: Reembolso; aCorrer: boolean; temOrigem: boolean;
+/* A fatura no Cegid que a nota de crédito anula (valor total) ou corrige
+   (valor menor). A lista vem do Cegid, com a sugerida já escolhida; "Outra"
+   deixa escrever a referência de um documento que a lista não traga. */
+function EscolhaFatura({ checkout, valor, total, nome = 'origem_id' }: {
+  checkout: string; valor?: number; total?: number; nome?: string;
+}) {
+  const [faturas, setFaturas] = useState<FaturaCegid[] | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [escolhida, setEscolhida] = useState('');
+  useEffect(() => {
+    let vivo = true;
+    faturasParaReembolso(checkout).then((r) => {
+      if (!vivo) return;
+      if (!r.ok) { setErro(r.erro); setFaturas([]); return; }
+      setFaturas(r.faturas); setEscolhida(r.sugerida || (r.faturas.length ? r.faturas[0].id : 'outra'));
+    });
+    return () => { vivo = false; };
+  }, [checkout]);
+  const efeito = valor != null && total != null
+    ? valor >= total ? 'A nota de crédito anula a fatura (valor total).' : 'A nota de crédito corrige a fatura (valor parcial).'
+    : null;
+
+  if (faturas === null) return <p className={e.sub}>A ler as faturas do cliente no Cegid…</p>;
+  const outra = escolhida === 'outra' || faturas.length === 0;
+  return (
+    <div className={e.escolhaFatura}>
+      <label className="campo">
+        <span>Fatura a anular ou corrigir</span>
+        <select className="entrada" name={outra ? undefined : nome} value={outra ? 'outra' : escolhida}
+                onChange={(ev) => setEscolhida(ev.target.value)}>
+          {faturas.map((f) => (
+            <option key={f.id} value={f.id}>
+              {f.referencia}{f.data ? ` · ${dia(f.data)}` : ''}{f.totalCents != null ? ` · ${euros(f.totalCents)}` : ''}
+            </option>
+          ))}
+          <option value="outra">Outra (escrever a referência)</option>
+        </select>
+      </label>
+      {outra && (
+        <label className="campo">
+          <span>Referência da fatura no Cegid</span>
+          <input name="origem" className="entrada" required placeholder="Ex.: FR 2026/12" maxLength={60} />
+        </label>
+      )}
+      {erro && <p className={e.sub}>{erro}</p>}
+      {efeito && <p className={e.efeitoNota}>{efeito}</p>}
+    </div>
+  );
+}
+
+function FormReembolso({ movimento, falta, aCorrer, executar }: {
+  movimento: Movimento; falta: number; aCorrer: boolean;
   executar: (f: () => Promise<Resultado>) => void;
 }) {
-  const [origem, setOrigem] = useState('');
+  const [valor, setValor] = useState((falta / 100).toFixed(2).replace('.', ','));
+  const cents = Math.round(Number(valor.replace(/\s|€/g, '').replace(',', '.')) * 100);
+  const jaReembolsado = movimento.reembolsos.some((r) => r.estado === 'feito');
   return (
-    <span className={e.repetirNota}>
-      <span className={e.sub} title={reembolso.cegid_erro || undefined}>Nota de crédito por criar</span>
-      {!temOrigem && (
-        <input className="entrada" value={origem} onChange={(ev) => setOrigem(ev.target.value)} placeholder="FR 2026/12" aria-label="Fatura-recibo de origem" />
-      )}
-      <button type="button" className="btn-texto" disabled={aCorrer || (!temOrigem && !origem.trim())}
-              onClick={() => executar(() => repetirNotaCredito(reembolso.id, origem))}>
-        Criar nota de crédito
-      </button>
-    </span>
+    <form className={e.formReembolso} onSubmit={(ev) => {
+      ev.preventDefault();
+      const f = new FormData(ev.currentTarget);
+      if (!window.confirm(`Reembolsar ${valor} € na Stripe e criar a nota de crédito no Cegid?`)) return;
+      executar(() => reembolsar(movimento.id, valor, String(f.get('motivo') || ''),
+        String(f.get('origem') || ''), String(f.get('origem_id') || '')));
+    }}>
+      <label className="campo">
+        <span>Valor (máximo {euros(falta)})</span>
+        <input name="valor" className="entrada" inputMode="decimal" required value={valor}
+               onChange={(ev) => setValor(ev.target.value)} />
+      </label>
+      <label className="campo">
+        <span>Motivo</span>
+        <input name="motivo" className="entrada" required minLength={3} maxLength={500}
+               placeholder="Ex.: desconto acordado, serviço não prestado" />
+      </label>
+      <EscolhaFatura checkout={movimento.id} valor={Number.isFinite(cents) ? cents : undefined}
+                     total={jaReembolsado ? Number.MAX_SAFE_INTEGER : movimento.total} />
+      <div>
+        <button type="submit" className="btn" disabled={aCorrer}>{aCorrer ? 'A processar…' : 'Reembolsar'}</button>
+      </div>
+    </form>
+  );
+}
+
+function RepetirNota({ reembolso, checkout, aCorrer, executar, temOrigem }: {
+  reembolso: Reembolso; checkout: string; aCorrer: boolean; temOrigem: boolean;
+  executar: (f: () => Promise<Resultado>) => void;
+}) {
+  const [aberto, setAberto] = useState(false);
+  if (!aberto) {
+    return (
+      <span className={e.repetirNota}>
+        <span className={e.sub} title={reembolso.cegid_erro || undefined}>Nota de crédito por criar</span>
+        <button type="button" className="btn-texto" disabled={aCorrer} onClick={() => (temOrigem
+          ? executar(() => repetirNotaCredito(reembolso.id))
+          : setAberto(true))}>
+          Criar nota de crédito
+        </button>
+      </span>
+    );
+  }
+  return (
+    <form className={e.formReembolso} onSubmit={(ev) => {
+      ev.preventDefault();
+      const f = new FormData(ev.currentTarget);
+      executar(() => repetirNotaCredito(reembolso.id, String(f.get('origem') || ''), String(f.get('origem_id') || '')));
+    }}>
+      <EscolhaFatura checkout={checkout} />
+      <div><button type="submit" className="btn btn-pequeno" disabled={aCorrer}>Criar nota de crédito</button></div>
+    </form>
   );
 }
