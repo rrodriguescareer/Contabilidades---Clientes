@@ -1,5 +1,6 @@
 'use client';
-import { useActionState, useEffect, useRef, useState, useTransition } from 'react';
+import { useActionState, useCallback, useEffect, useRef, useState, useTransition } from 'react';
+import { AvisoFlutuante, type Notificacao } from './notificacao';
 import {
   anularPagamentoExtra, enviarMensagem, pedirPagamentoExtra, reembolsar, repetirNotaCredito, verSenhaFinancas,
 } from '@/lib/irs-actions';
@@ -499,6 +500,7 @@ function Conversa({ processo, conta, mensagens, aoMudar }:
 
 /* ------------------------------------------------------------- pagamento */
 
+type Resultado = { ok: boolean; erro?: string; aviso?: string; titulo?: string; detalhes?: string[]; tom?: 'ok' | 'atencao' };
 type Reembolso = { id: string; total: number; motivo: string; estado: string; em: string;
   stripe: string | null; cegid: string | null; cegid_erro: string | null };
 type Movimento = { id: string; tipo: string; estado: string; total: number; descricao: string | null;
@@ -510,21 +512,24 @@ type Movimento = { id: string; tipo: string; estado: string; total: number; desc
 function Pagamento({ checkout, movimentos, processo, aoMudar }:
   { checkout: Record<string, unknown> | null; movimentos: Movimento[]; processo: string; aoMudar: () => void }) {
   const detalhe = (checkout?.detalhe as { items?: { code: string; label: string; amount_cents: number }[]; discount_code?: string } | null) || null;
-  const [aviso, setAviso] = useState<{ ok: boolean; texto: string } | null>(null);
+  const [aviso, setAviso] = useState<Notificacao | null>(null);
   const [aCorrer, correr] = useTransition();
   const [abertoPara, setAbertoPara] = useState<string | null>(null);
+  const fecharAviso = useCallback(() => setAviso(null), []);
 
-  const executar = (fazer: () => Promise<{ ok: boolean; erro?: string; aviso?: string }>) =>
+  const executar = (fazer: () => Promise<Resultado>) =>
     correr(async () => {
       setAviso(null);
       const r = await fazer();
-      setAviso({ ok: r.ok, texto: r.ok ? r.aviso || 'Feito.' : r.erro || 'Não foi possível.' });
+      setAviso(r.ok
+        ? { tom: r.tom || 'ok', titulo: r.titulo || r.aviso || 'Feito.', detalhes: r.detalhes }
+        : { tom: 'erro', titulo: 'Não foi possível concluir', detalhes: [r.erro || 'Tente outra vez.'] });
       if (r.ok) { setAbertoPara(null); aoMudar(); }
     });
 
   return (
     <>
-      {aviso && <p className={aviso.ok ? 'aviso-positivo' : 'aviso-critico'}>{aviso.texto}</p>}
+      <AvisoFlutuante aviso={aviso} fechar={fecharAviso} />
 
       <section className={e.cartao}>
         <h3 className={e.tituloCartao}>Preparação do IRS</h3>
@@ -681,7 +686,7 @@ function Pagamento({ checkout, movimentos, processo, aoMudar }:
 
 function RepetirNota({ reembolso, aCorrer, executar, temOrigem }: {
   reembolso: Reembolso; aCorrer: boolean; temOrigem: boolean;
-  executar: (f: () => Promise<{ ok: boolean; erro?: string; aviso?: string }>) => void;
+  executar: (f: () => Promise<Resultado>) => void;
 }) {
   const [origem, setOrigem] = useState('');
   return (

@@ -13,7 +13,11 @@ import { expirarSessao, reembolsarNaStripe } from './stripe-gestao';
    do IRS com a consola; a gestão só deixa entrar quem é do gabinete (o
    session() trava o resto), e cada função da base volta a confirmá-lo. */
 
-type Resposta = { ok: boolean; erro?: string; aviso?: string; detalhe?: string };
+type Resposta = {
+  ok: boolean; erro?: string; aviso?: string; detalhe?: string;
+  /** Para a notificação: um título curto e uma linha por integração. */
+  titulo?: string; detalhes?: string[]; tom?: 'ok' | 'atencao';
+};
 
 /** Uma vista da consola, num pedido só. */
 export async function carregarGabinete(vista: string, processo: string | null) {
@@ -239,9 +243,14 @@ export async function reembolsar(checkout: string, valor: string, motivo: string
     `${euros(cents)} · Stripe ${stripe.dados.id} (${stripe.dados.status}) · ${nota.ok ? `nota de crédito em rascunho no Cegid ${nota.id}` : `nota de crédito por criar: ${nota.erro}`} · motivo: ${motivo.trim()}`,
     k?.account_id || null, k?.case_id || '');
   revalidatePath('/irs');
-  return nota.ok
-    ? { ok: true, aviso: `Reembolso de ${euros(cents)} feito na Stripe e nota de crédito guardada em rascunho no Cegid.` }
-    : { ok: true, aviso: `Reembolso de ${euros(cents)} feito na Stripe. A nota de crédito não foi criada: ${nota.erro}` };
+  return {
+    ok: true, tom: nota.ok ? 'ok' : 'atencao',
+    titulo: `Reembolso de ${euros(cents)} feito`,
+    detalhes: [
+      `Stripe: devolvido ao cliente (${stripe.dados.id}).`,
+      nota.ok ? `Cegid: nota de crédito n.º ${nota.id} guardada em rascunho.` : `Cegid: a nota de crédito não foi criada — ${nota.erro}`,
+    ],
+  };
 }
 
 async function notaDeCredito(processo: string, cents: number, motivo: string,
@@ -278,7 +287,7 @@ export async function repetirNotaCredito(reembolso: string, origemRef = ''): Pro
   await client.rpc('concluir_reembolso', { p_reembolso: reembolso, p_stripe_id: null, p_stripe_estado: null, p_cegid: nota.id, p_cegid_erro: null, p_falhou: false });
   await registarCegid('reembolso', `Nota de crédito em rascunho no Cegid ${nota.id} · ${euros(r.amount_cents)}`, r.account_id, r.case_id);
   revalidatePath('/irs');
-  return { ok: true, aviso: 'Nota de crédito guardada em rascunho no Cegid.' };
+  return { ok: true, tom: 'ok', titulo: 'Nota de crédito criada', detalhes: [`Cegid: nota de crédito n.º ${nota.id} guardada em rascunho.`] };
 }
 
 /** Pagamento adicional combinado com o cliente. Fica uma fatura-recibo em
@@ -294,18 +303,22 @@ export async function pedirPagamentoExtra(processo: string, valor: string, descr
   if (error || typeof id !== 'string') return { ok: false, erro: error?.code === '22023' ? error.message : 'Não foi possível criar o pedido.' };
 
   const alvo = await titularDoProcesso(processo);
-  let aviso = `Pedido de ${euros(cents)} enviado ao cliente.`;
+  let cegid = 'Cegid: a fatura-recibo não foi criada — o cliente não tem NIF no perfil.';
+  let tudo = false;
   if (alvo?.perfil?.nif) {
     const r = await emitirFaturaRecibo({ nif: alvo.perfil.nif, nome: alvo.nome, descricao: descricao.trim(), totalCents: cents });
     const documento = r.ok ? idDoDocumento(r.dados) : null;
     if (documento) await client.rpc('guardar_cegid_do_pagamento', { p_checkout: id, p_documento: documento });
-    aviso += r.ok ? ' Fatura-recibo guardada em rascunho no Cegid.' : ` A fatura-recibo não foi criada no Cegid: ${r.erro}`;
-  } else {
-    aviso += ' A fatura-recibo não foi criada no Cegid: o cliente não tem NIF no perfil.';
+    tudo = r.ok;
+    cegid = r.ok ? `Cegid: fatura-recibo n.º ${documento || '—'} guardada em rascunho.` : `Cegid: a fatura-recibo não foi criada — ${r.erro}`;
   }
   await registarCegid('pagamento_extra', `${euros(cents)} · ${descricao.trim()}`, alvo?.conta || null, processo);
   revalidatePath('/irs');
-  return { ok: true, aviso };
+  return {
+    ok: true, tom: tudo ? 'ok' : 'atencao',
+    titulo: `Pagamento de ${euros(cents)} pedido`,
+    detalhes: [`Portal: o pedido aparece ao cliente no separador Pagamento.`, cegid],
+  };
 }
 
 export async function anularPagamentoExtra(checkout: string): Promise<Resposta> {
@@ -315,5 +328,5 @@ export async function anularPagamentoExtra(checkout: string): Promise<Resposta> 
   if (error) return { ok: false, erro: error.code === '22023' ? error.message : 'Não foi possível anular.' };
   await expirarSessao(typeof sessao === 'string' ? sessao : null);
   revalidatePath('/irs');
-  return { ok: true, aviso: 'Pedido anulado. Se havia fatura-recibo em rascunho no Cegid, apague-a lá.' };
+  return { ok: true, tom: 'atencao', titulo: 'Pedido anulado', detalhes: ['Portal: o pedido deixou de aparecer ao cliente.', 'Cegid: se havia fatura-recibo em rascunho, apague-a lá.'] };
 }
