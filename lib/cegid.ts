@@ -343,8 +343,9 @@ export async function emitirNotaCredito(nota: {
   nif: string; nome: string; descricao: string; totalCents: number; motivo: string;
   origemId?: string | null; origemRef?: string | null;
 }) {
+  // O formato é o da documentação: "{id}" (texto), não uma lista JSON.
   const origem = nota.origemId
-    ? { parent_documents_ids: [/^\d+$/.test(nota.origemId) ? Number(nota.origemId) : nota.origemId] }
+    ? { parent_documents_ids: `{${nota.origemId}}` }
     : nota.origemRef ? { parent_document_reference: nota.origemRef } : {};
   return chamar<Record<string, unknown>>('/v1/commercial_sales_documents', {
     metodo: 'POST',
@@ -417,4 +418,40 @@ export async function faturasDoCliente(nif: string): Promise<Resultado<FaturaCeg
     })
     .sort((a, b) => (a.data < b.data ? 1 : a.data > b.data ? -1 : Number(b.id) - Number(a.id)));
   return { ok: true, dados: faturas };
+}
+
+/* ------------------------------------------- faturas ainda em rascunho */
+
+/** O Cegid recusa a nota de crédito quando a fatura de origem não tem número:
+    é o caso de um rascunho. Esta é a mensagem com que o diz. */
+export const origemEmRascunho = (erro: string) =>
+  /refer[eê]ncia do documento original|documentos associados/i.test(erro);
+
+type Linha = { id?: number | string; quantity?: number; unit_price?: number };
+
+async function linhasDoDocumento(id: string): Promise<Resultado<Linha[]>> {
+  const r = await chamar<unknown>(`/v1/commercial_sales_documents/${encodeURIComponent(id)}`);
+  if (!r.ok) return r;
+  const d = r.dados as { data?: { attributes?: { lines?: Linha[] }; lines?: Linha[] }; lines?: Linha[] };
+  const linhas = d?.lines || d?.data?.lines || d?.data?.attributes?.lines || [];
+  return { ok: true, dados: linhas };
+}
+
+/** Uma fatura em rascunho ainda não é um documento fiscal: em vez de nota de
+    crédito, corrige-se o valor (reembolso parcial) ou apaga-se (total). */
+export async function corrigirRascunho(id: string, novoTotalCents: number): Promise<Resultado<'corrigido' | 'apagado'>> {
+  if (novoTotalCents <= 0) {
+    const r = await chamar<unknown>(`/v1/commercial_sales_documents/${encodeURIComponent(id)}`, { metodo: 'DELETE', jsonApi: true });
+    return r.ok ? { ok: true, dados: 'apagado' } : r;
+  }
+  const linhas = await linhasDoDocumento(id);
+  if (!linhas.ok) return linhas;
+  if (linhas.dados.length !== 1 || linhas.dados[0].id == null) {
+    return { ok: false, erro: 'O rascunho tem várias linhas: corrija o valor diretamente no Cegid.' };
+  }
+  const r = await chamar<unknown>(`/v1/commercial_sales_documents/${encodeURIComponent(id)}`, {
+    metodo: 'PATCH', jsonApi: true,
+    corpo: { lines: [{ id: linhas.dados[0].id, quantity: 1, unit_price: novoTotalCents / 100 }] },
+  });
+  return r.ok ? { ok: true, dados: 'corrigido' } : r;
 }

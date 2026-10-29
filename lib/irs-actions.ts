@@ -4,7 +4,8 @@ import { session } from './auth';
 import { adminClient } from './admin-client';
 import { uuid } from './data';
 import {
-  criarFichaCliente, emitirFaturaRecibo, emitirNotaCredito, faturasDoCliente, guardarCredenciais, idDoDocumento,
+  corrigirRascunho, criarFichaCliente, emitirFaturaRecibo, emitirNotaCredito, faturasDoCliente, guardarCredenciais, idDoDocumento,
+  origemEmRascunho,
   origemDasCredenciais, temCredenciais, testarLigacao, type FaturaCegid,
 } from './cegid';
 import { expirarSessao, reembolsarNaStripe } from './stripe-gestao';
@@ -296,7 +297,12 @@ export async function reembolsar(checkout: string, valor: string, motivo: string
     return { ok: false, erro: `A Stripe recusou o reembolso: ${stripe.erro}` };
   }
 
-  const nota = await notaDeCredito(k?.case_id || '', cents, motivo, fatura, origemRef, k?.descricao || null, parcial);
+  const jaReembolsado = (anteriores || []).reduce((t, r) => t + r.amount_cents, 0);
+  const restante = (k?.amount_cents || 0) - jaReembolsado - cents;
+  const nota = await notaDeCredito(k?.case_id || '', cents, motivo, fatura, origemRef, k?.descricao || null, parcial, restante);
+  if (nota.ok && 'rascunho' in nota && nota.rascunho === 'apagado') {
+    await client.rpc('guardar_cegid_do_pagamento', { p_checkout: checkout, p_documento: null });
+  }
   await client.rpc('concluir_reembolso', {
     p_reembolso: id, p_stripe_id: stripe.dados.id, p_stripe_estado: stripe.dados.status,
     p_cegid: nota.ok ? nota.id : null, p_cegid_erro: nota.ok ? null : nota.erro, p_falhou: false,
@@ -325,16 +331,20 @@ export async function reembolsar(checkout: string, valor: string, motivo: string
     titulo: `Reembolso de ${euros(cents)} feito`,
     detalhes: [
       `Stripe: devolvido ao cliente (${stripe.dados.id}).`,
-      nota.ok
-        ? `Cegid: nota de crédito n.º ${nota.id} em rascunho, a ${parcial ? 'corrigir' : 'anular'} a fatura de origem.`
-        : `Cegid: a nota de crédito não foi criada — ${nota.erro}`,
+      !nota.ok
+        ? `Cegid: a nota de crédito não foi criada — ${nota.erro}`
+        : 'rascunho' in nota
+          ? nota.rascunho === 'apagado'
+            ? `Cegid: a fatura-recibo n.º ${nota.origemId} ainda estava em rascunho e foi apagada (reembolso total).`
+            : `Cegid: a fatura-recibo n.º ${nota.origemId} ainda estava em rascunho e foi corrigida para ${euros(restante)}.`
+          : `Cegid: nota de crédito n.º ${nota.id} em rascunho, a ${parcial ? 'corrigir' : 'anular'} a fatura de origem.`,
       cliente?.perfil?.email ? `Email: aviso enviado para ${cliente.perfil.email}.` : 'Email: o cliente não tem email no perfil.',
     ],
   };
 }
 
 async function notaDeCredito(processo: string, cents: number, motivo: string,
-  origemId: string | null, origemRef: string, descricao: string | null, parcial = true) {
+  origemId: string | null, origemRef: string, descricao: string | null, parcial = true, restanteCents: number | null = null) {
   const alvo = await titularDoProcesso(processo);
   if (!alvo?.perfil?.nif) return { ok: false as const, erro: 'O cliente não tem NIF no perfil.' };
   if (!origemId && !origemRef.trim()) {
@@ -345,6 +355,13 @@ async function notaDeCredito(processo: string, cents: number, motivo: string,
     descricao: `${parcial ? 'Correção' : 'Anulação'} — ${descricao || 'Preparação do IRS 2026'}`,
     origemId, origemRef: origemRef.trim() || null,
   });
+  if (!r.ok && origemId && origemEmRascunho(r.erro) && restanteCents != null) {
+    // A fatura de origem ainda é um rascunho: corrige-se ela própria.
+    const c = await corrigirRascunho(origemId, restanteCents);
+    if (!c.ok) return { ok: false as const, erro: `A fatura de origem está em rascunho e não foi possível corrigi-la: ${c.erro}` };
+    return { ok: true as const, id: c.dados === 'apagado' ? `FR ${origemId} (rascunho apagado)` : `FR ${origemId} (rascunho corrigido)`,
+             rascunho: c.dados, origemId };
+  }
   if (!r.ok) return { ok: false as const, erro: r.nifInvalido ? `O Cegid recusou o NIF ${alvo.perfil.nif}.` : r.erro };
   return { ok: true as const, id: idDoDocumento(r.dados) || 'criada' };
 }
@@ -362,7 +379,11 @@ export async function repetirNotaCredito(reembolso: string, origemRef = '', orig
   if (origemId.trim() && !k?.cegid_documento) {
     await client.rpc('guardar_cegid_do_pagamento', { p_checkout: r.checkout_id, p_documento: origemId.trim() });
   }
-  const nota = await notaDeCredito(r.case_id, r.amount_cents, r.motivo, origemId.trim() || k?.cegid_documento || null, origemRef, k?.descricao || null);
+  const { data: pago } = await adminClient().from('irs_checkouts').select('amount_cents').eq('id', r.checkout_id).single();
+  const { data: todos } = await adminClient().from('reembolsos').select('amount_cents').eq('checkout_id', r.checkout_id).eq('estado', 'feito');
+  const restante = (pago?.amount_cents || 0) - (todos || []).reduce((t, x) => t + x.amount_cents, 0);
+  const nota = await notaDeCredito(r.case_id, r.amount_cents, r.motivo, origemId.trim() || k?.cegid_documento || null, origemRef,
+    k?.descricao || null, true, restante);
   if (!nota.ok) {
     await client.rpc('concluir_reembolso', { p_reembolso: reembolso, p_stripe_id: null, p_stripe_estado: null, p_cegid: null, p_cegid_erro: nota.erro, p_falhou: false });
     return { ok: false, erro: nota.erro };
@@ -370,7 +391,14 @@ export async function repetirNotaCredito(reembolso: string, origemRef = '', orig
   await client.rpc('concluir_reembolso', { p_reembolso: reembolso, p_stripe_id: null, p_stripe_estado: null, p_cegid: nota.id, p_cegid_erro: null, p_falhou: false });
   await registarCegid('reembolso', `Nota de crédito em rascunho no Cegid ${nota.id} · ${euros(r.amount_cents)}`, r.account_id, r.case_id);
   revalidatePath('/irs');
-  return { ok: true, tom: 'ok', titulo: 'Nota de crédito criada', detalhes: [`Cegid: nota de crédito n.º ${nota.id} guardada em rascunho.`] };
+  return {
+    ok: true, tom: 'ok', titulo: 'rascunho' in nota ? 'Fatura-recibo corrigida' : 'Nota de crédito criada',
+    detalhes: ['rascunho' in nota
+      ? nota.rascunho === 'apagado'
+        ? `Cegid: a fatura-recibo n.º ${nota.origemId} ainda estava em rascunho e foi apagada.`
+        : `Cegid: a fatura-recibo n.º ${nota.origemId} ainda estava em rascunho e foi corrigida para ${euros(restante)}.`
+      : `Cegid: nota de crédito n.º ${nota.id} guardada em rascunho.`],
+  };
 }
 
 /** Pagamento adicional combinado com o cliente. Fica uma fatura-recibo em
