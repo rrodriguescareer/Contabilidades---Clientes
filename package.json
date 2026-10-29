@@ -13,9 +13,7 @@
     "db:bundle": "node scripts/build-install.mjs",
     "test:install": "node --test tests/install.test.mjs",
     "test:platform": "node --test tests/platform.test.mjs",
-    "test:revolut": "node --test tests/revolut.test.mjs",
     "test:upgrade": "node --test tests/upgrade.test.mjs",
-    "test:dashboard": "node --test tests/dashboard.test.mjs",
     "test:auth": "node --test tests/auth-access.test.mjs",
     "test:secrets": "node --test tests/secret-crypto.test.mjs",
     "test:password": "node --test tests/password-leak.test.mjs"

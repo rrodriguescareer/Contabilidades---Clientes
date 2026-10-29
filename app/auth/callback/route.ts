@@ -16,7 +16,7 @@ export async function GET(request:NextRequest){
   const p=request.nextUrl.searchParams;
   const code=p.get('code'),hash=p.get('token_hash'),type=p.get('type');
   const wanted=p.get('next');
-  const destino=wanted&&/^\/(?!\/)/.test(wanted)?wanted:null;
+  const destino=wanted&&/^\/(?![\/\\])[^\\\s]*$/.test(wanted)?wanted:null;
   const next=destino==='/nova-password'||type==='recovery'?'/nova-password'
     :(await cookies()).get('rr_invite')?'/convites/aceitar':(destino||'/app');
 

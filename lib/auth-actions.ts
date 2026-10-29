@@ -19,7 +19,7 @@ export async function signIn(form:FormData){
  // Volta ao que o visitante tentou abrir, desde que seja um caminho desta
  // aplicação: '//exemplo.pt' sairia daqui para fora.
  const pedido=text(form,'destino');
- const interno=/^\/(?!\/)/.test(pedido)?pedido:'';
+ const interno=/^\/(?![\/\\])[^\\\s]*$/.test(pedido)?pedido:'';
  // Sinal de 30 segundos para a transição de entrada; não leva nada pessoal.
  const {cookies}=await import('next/headers');
  (await cookies()).set('rr_chegada','1',{maxAge:30,path:'/',sameSite:'lax',httpOnly:false,secure:process.env.NODE_ENV==='production'});

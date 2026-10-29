@@ -21,4 +21,5 @@ export const ALERTAS: Record<string, { rotulo: string; urgente?: boolean }> = {
   nif_agregado: { rotulo: 'NIF já consta noutro agregado' },
   nif_recusado: { rotulo: 'NIF recusado pelo Cegid', urgente: true },
   two_factor: { rotulo: 'Dois fatores ativo — é preciso contactar' },
+  pagamento_duplicado: { rotulo: 'Pagamento em duplicado — reembolsar na Stripe', urgente: true },
 };

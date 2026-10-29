@@ -138,6 +138,15 @@ test('production registration, administration, quotations, checkout and private 
    await db.query("select public.finalizar_pagamento_stripe($1,'cs_test_depois',$2,true,false,$3,'eur')",[attempt.id,attempt.id,attempt.amount_cents]);
    await actor(ids.a);
    assert.equal((await db.query('select state from public.irs_checkouts where id=$1',[attempt.id])).rows[0].state,'paid');
+   // Um segundo pagamento confirmado para o mesmo processo não passa a pago: alerta para reembolsar.
+   await db.exec('reset role');
+   const segunda=(await db.query("insert into public.irs_checkouts(account_id,case_id,user_id,quote,amount_cents,state,provider_order_id) values($1,$2,$3,'{}',$4,'cancelled','cs_test_segunda') returning id",[a,c,ids.a,attempt.amount_cents])).rows[0].id;
+   await actor(ids.staff,'service_role');
+   await db.query("select public.finalizar_pagamento_stripe($1,'cs_test_segunda',$2,true,false,$3,'eur')",[segunda,segunda,attempt.amount_cents]);
+   await db.exec('reset role');
+   assert.equal((await db.query('select state from public.irs_checkouts where id=$1',[segunda])).rows[0].state,'cancelled');
+   assert.equal((await db.query("select count(*)::int as n from public.task_alerts where account_id=$1 and kind='pagamento_duplicado'",[a])).rows[0].n,1);
+   await actor(ids.a);
    // Pagar depois não mexe na fase do processo.
    assert.equal((await db.query('select status from public.irs_cases where id=$1',[c])).rows[0].status,'filed');
    assert.equal((await db.query("select title from public.progress_events where case_id=$1 order by created_at desc limit 1",[c])).rows[0].title,'Pagamento recebido');
@@ -163,6 +172,18 @@ test('production registration, administration, quotations, checkout and private 
    await actor(ids.a);assert.equal((await db.query('select state from public.irs_checkouts where id=$1',[attempt.id])).rows[0].state,'paid');
    assert.equal((await db.query('select count(*)::int as n from public.progress_events where case_id=$1',[c])).rows[0].n,1);
    assert.equal((await db.query('select status from public.irs_cases where id=$1',[c])).rows[0].status,'submitted_by_client');
+  });
+  await t.test('only the server settles a payment; visitors without a session run no function',async()=>{
+   const c=await newCase();await income(c,'employment');
+   const attempt=(await db.query("select public.begin_irs_checkout($1,$2,'') as data",[a,c])).rows[0].data;
+   await assert.rejects(db.query("select public.anexar_sessao_de_pagamento($1,'cs_inventada','')",[attempt.id]),/permission denied/);
+   await assert.rejects(db.query("select public.finalizar_pagamento_stripe($1,'cs_inventada',$2,true,false,$3,'eur')",[attempt.id,attempt.id,attempt.amount_cents]),/permission denied/);
+   await db.exec('reset role');
+   const abertas=(await db.query("select count(*)::int as n from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.prokind='f' and has_function_privilege('anon',p.oid,'execute')")).rows[0].n;
+   assert.equal(abertas,0);
+   // O registo de atividade (prova em contestações) só o escreve o servidor.
+   await actor(ids.a);
+   await assert.rejects(db.query("select public.registar_atividade_de($1,'stripe_evento','inventado',$2,null,null)",[ids.a,c]),/permission denied/);
   });
   await t.test('a client upload is finished only once the file is in storage',async()=>{
    const c=await newCase();

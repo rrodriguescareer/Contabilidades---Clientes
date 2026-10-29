@@ -1,9 +1,7 @@
 import ConnectionDiagnostic from '@/components/connection-diagnostic';
 import { ownerSession } from '@/lib/auth';
 import { Avisos, Secao } from '@/components/consola';
-import { adminConfigured, adminClient } from '@/lib/admin-client';
-import { savePaymentSettings } from '@/lib/integration-actions';
-import { Submeter } from '@/components/forms';
+import { adminConfigured } from '@/lib/admin-client';
 import e from '@/components/consola.module.css';
 
 export const dynamic = 'force-dynamic';
@@ -14,72 +12,33 @@ function Estado({ pronto, sim, nao }: { pronto: boolean; sim: string; nao: strin
 }
 
 export default async function Configuracao({ searchParams }: { searchParams: Promise<{ erro?: string; mensagem?: string }> }) {
-  const { client } = await ownerSession();
+  await ownerSession();
   const parametros = await searchParams;
 
-  const { data: definicoes } = await client.from('payment_settings').select('enabled,api_version').eq('id', true).single();
-
-  const { data: segredos } = adminConfigured()
-    ? await adminClient().from('integration_secrets').select('scope').in('scope', ['revolut:merchant', 'revolut:webhook'])
-    : { data: [] };
-
-  const temMerchant = Boolean(segredos?.some((s) => s.scope === 'revolut:merchant'));
-  const temWebhook = Boolean(segredos?.some((s) => s.scope === 'revolut:webhook'));
   const cifragemPronta = /^[a-f0-9]{64}$/i.test(process.env.INTEGRATION_ENCRYPTION_KEY || '');
-  const podeGuardar = adminConfigured() && cifragemPronta;
 
   return (
     <>
       <Avisos erro={parametros.erro} mensagem={parametros.mensagem} />
 
       <div className={e.fichaCaixas}>
-        <Secao titulo="Revolut Merchant" nota="Configuração partilhada com o portal do IRS. Campos vazios mantêm as chaves já guardadas.">
-          <div className="cartao pilha pilha-4">
-            <div className="linha">
-              <Estado pronto={temMerchant} sim="Chave Merchant guardada" nao="Chave Merchant por configurar" />
-              <Estado pronto={temWebhook} sim="Webhook guardado" nao="Webhook por configurar" />
-              <Estado pronto={Boolean(definicoes?.enabled)} sim="Pagamentos ativos" nao="Pagamentos desativados" />
+        <Secao titulo="Pagamentos" nota="Processados pela Stripe, dentro do portal do IRS.">
+          <div className="cartao pilha pilha-3">
+            <p className="suave">
+              As chaves da Stripe (secreta, publicável e o segredo do webhook) vivem nas variáveis de ambiente da
+              aplicação do IRS na Vercel, nunca na base de dados. Os métodos de pagamento — cartão, MB WAY,
+              Multibanco, Apple Pay, Google Pay, PayPal, Revolut Pay e Klarna — ligam-se e desligam-se no painel da
+              Stripe; o checkout mostra os que lá estiverem ativos.
+            </p>
+            <p className="pequeno suave">
+              O webhook aponta para <code>https://irs.rr-contabilidade.com/api/stripe</code>. Antes de abrir ao
+              público, troque as chaves de teste pelas de produção e crie o webhook de produção.
+            </p>
+            <div>
+              <a className="btn btn-secundario" href="https://dashboard.stripe.com" target="_blank" rel="noopener">
+                Abrir o painel da Stripe
+              </a>
             </div>
-
-            <form action={savePaymentSettings} className="pilha pilha-4">
-              <label className="campo">
-                <span>Versão da API Merchant</span>
-                <input
-                  name="version"
-                  className="entrada"
-                  defaultValue={definicoes?.api_version || ''}
-                  placeholder="AAAA-MM-DD"
-                  pattern="[0-9]{4}-[0-9]{2}-[0-9]{2}"
-                  required
-                />
-              </label>
-              <label className="campo">
-                <span>Nova chave secreta Merchant</span>
-                <input name="merchant_key" type="password" className="entrada" autoComplete="new-password" maxLength={4096} />
-              </label>
-              <label className="campo">
-                <span>Novo segredo de assinatura do webhook</span>
-                <input name="webhook_secret" type="password" className="entrada" autoComplete="new-password" maxLength={4096} />
-              </label>
-              <label className="caixa">
-                <input name="enabled" type="checkbox" defaultChecked={definicoes?.enabled || false} />
-                <span className="pequeno">Ativar pagamentos online.</span>
-              </label>
-              <label className="caixa">
-                <input name="validated" type="checkbox" />
-                <span className="pequeno">Validei o checkout e o webhook na minha conta Revolut Merchant.</span>
-              </label>
-
-              {podeGuardar ? (
-                <Submeter className="btn" aDecorrer="A guardar…">
-                  Guardar configuração
-                </Submeter>
-              ) : (
-                <p className="aviso aviso-atencao">
-                  Falta a configuração privada do servidor indicada ao lado.
-                </p>
-              )}
-            </form>
           </div>
         </Secao>
 
@@ -96,7 +55,6 @@ export default async function Configuracao({ searchParams }: { searchParams: Pro
               única vez e nunca mais substituída depois de haver credenciais guardadas.
             </p>
             <p className="pequeno suave">
-              Na Revolut, aponte as notificações para <code>https://[domínio-do-IRS]/api/revolut/webhook</code>.
               Nunca ponha chaves secretas em variáveis com prefixo <code>NEXT_PUBLIC</code>.
             </p>
           </div>
