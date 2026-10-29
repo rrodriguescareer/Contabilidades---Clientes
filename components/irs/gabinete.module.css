@@ -157,9 +157,8 @@ a.item { text-decoration: none; }
   display: grid;
   gap: var(--e-5);
   align-content: start;
-  padding: var(--e-5) var(--e-6) var(--e-8);
+  padding: var(--e-5) clamp(var(--e-4), 2.5vw, var(--e-8)) var(--e-8);
   inline-size: 100%;
-  max-inline-size: 84rem;
   transition: opacity .15s ease;
 }
 .conteudo[data-ocupado='true'] { opacity: .6; }
@@ -581,3 +580,19 @@ a.item { text-decoration: none; }
   .estadoCabecalho { justify-items: start; }
   .balao { max-inline-size: 90%; }
 }
+
+/* --------------------------------------------- pagamentos e reembolsos */
+
+.movimentos { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--e-3); }
+.movimentos > li { display: grid; gap: var(--e-3); padding: var(--e-4); border: 1px solid var(--linha); border-radius: .8rem; background: var(--superficie); }
+.movimentoTopo { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--e-3); }
+.movimentoTopo > div:first-child { display: grid; gap: .2rem; min-inline-size: 0; }
+.movimentoValor { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+.movimentoValor strong { font-size: var(--t-lg); margin-inline-end: .3rem; }
+.reembolsos { list-style: none; margin: 0; padding: 0; display: grid; gap: .4rem; }
+.reembolsos li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem; padding: .55rem .7rem; border-radius: .6rem; background: var(--superficie-2); font-size: var(--t-sm); }
+.reembolsos li > span:last-child { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.movimentoAcoes { display: flex; flex-wrap: wrap; align-items: center; gap: var(--e-3); }
+.formReembolso { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: var(--e-3); align-items: end; }
+.repetirNota { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+.repetirNota .entrada { inline-size: 9rem; padding-block: .3rem; }

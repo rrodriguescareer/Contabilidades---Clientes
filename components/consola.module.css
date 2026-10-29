@@ -147,8 +147,9 @@
   align-content: start;
   min-inline-size: 0;
   inline-size: 100%;
-  max-inline-size: 84rem;
-  padding: var(--e-5) var(--e-6) var(--e-8);
+  /* Ocupa o ecrã todo: em monitores grandes as tabelas e os painéis usam a
+     largura em vez de deixarem uma faixa vazia à direita. */
+  padding: var(--e-5) clamp(var(--e-4), 2.5vw, var(--e-8)) var(--e-8);
 }
 @media (max-width: 700px) { .topo, .conteudo { padding-inline: var(--e-4); } }
 

@@ -2,7 +2,7 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useTransition } from 'react';
 import { avancarProcesso, prontidaoDoProcesso } from '@/lib/irs-actions';
-import { FASES, LINHA, PASSOS, QUEM, estadoDe, posicao, type Prontidao } from '@/lib/fluxo';
+import { FASES, LINHA, PASSOS, QUEM_GABINETE, estadoDe, posicao, type Prontidao } from '@/lib/fluxo';
 import e from './gabinete.module.css';
 
 /* Isto era uma caixa com botões e nada mais: não se via onde o processo estava
@@ -62,7 +62,7 @@ export function Avanco({
       <div className="linha-entre">
         <h2>Fluxo do processo</h2>
         <span className="selo-espera" data-espera={actual?.espera}>
-          {QUEM[actual?.espera || 'gabinete']}
+          {QUEM_GABINETE[actual?.espera || 'gabinete']}
         </span>
       </div>
 

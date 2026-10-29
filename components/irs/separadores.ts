@@ -29,21 +29,22 @@ export type Separador = {
 
 const SUPORTE = 'Documentação de Suporte';
 
-const PROVA =
-  'Não são obrigatórios, mas é com eles que se valida, prova e confronta o que a AT já tem.';
+/** Os documentos são obrigatórios em todos os separadores: é com eles que se
+    valida e confronta o que a AT já tem. */
+const OBRIGATORIO = 'Obrigatório: pelo menos um documento por cada rendimento declarado.';
 
 export const SEPARADORES: Separador[] = [
   {
     id: 'employment',
     categoria: 'employment',
-    titulo: 'Trabalho dependente',
+    titulo: 'Trabalho Dependente',
     ajuda: 'Salários. Um rendimento por cada membro do agregado que os tenha recebido.',
     tipos: ['Salário', 'Subsídios', 'Outro'],
     interruptores: ['irs_jovem', 'estuda_trabalha'],
     documentos: {
       tipos: [SUPORTE],
-      obrigatorio: false,
-      nota: `Declaração anual do empregador, recibos de vencimento. ${PROVA}`,
+      obrigatorio: true,
+      nota: `Declaração anual da entidade patronal ou recibos de vencimento. ${OBRIGATORIO}`,
     },
   },
   {
@@ -53,21 +54,22 @@ export const SEPARADORES: Separador[] = [
     ajuda: 'Um rendimento por cada membro do agregado com pensões.',
     tipos: ['Pensões de Reforma', 'Pensões de Alimentos', 'Outras Pensões'],
     interruptores: [],
-    documentos: { tipos: [SUPORTE], obrigatorio: false, nota: PROVA },
+    documentos: { tipos: [SUPORTE], obrigatorio: true, nota: `Declaração anual da pensão. ${OBRIGATORIO}` },
   },
   {
     id: 'independent',
     categoria: 'independent',
-    titulo: 'Recibos verdes',
-    ajuda: 'Trabalho independente, por titular.',
+    titulo: 'Independente (Vendas e Recibos Verdes)',
+    ajuda: 'Vendas de bens e prestação de serviços em nome individual, por titular.',
     tipos: [
+      'Vendas de Bens',
       'Atividades do art. 151.º do CIRS — profissões liberais',
       'Outros Tipos de Atividades',
       'Royalties',
       'Outros',
     ],
     interruptores: ['irs_jovem'],
-    documentos: { tipos: [SUPORTE], obrigatorio: false, nota: PROVA },
+    documentos: { tipos: [SUPORTE], obrigatorio: true, nota: `Faturas, faturas-recibo ou o resumo anual do Portal das Finanças. ${OBRIGATORIO}` },
   },
   {
     id: 'capital',
@@ -76,7 +78,7 @@ export const SEPARADORES: Separador[] = [
     ajuda: 'Juros e dividendos. Todos os rendimentos têm titular.',
     tipos: ['Juros', 'Dividendos', 'Outros'],
     interruptores: [],
-    documentos: { tipos: [SUPORTE], obrigatorio: false, nota: PROVA },
+    documentos: { tipos: [SUPORTE], obrigatorio: true, nota: `Declarações anuais do banco ou da corretora. ${OBRIGATORIO}` },
   },
   {
     id: 'property_rent',
@@ -88,14 +90,14 @@ export const SEPARADORES: Separador[] = [
     interruptores: [],
     documentos: {
       tipos: [SUPORTE, 'Despesas'],
-      obrigatorio: false,
-      nota: 'As despesas deduzem às rendas recebidas. Cada documento tem de dizer a que imóvel pertence.',
+      obrigatorio: true,
+      nota: `Recibos de renda e despesas do imóvel; as despesas deduzem às rendas. Cada documento indica o imóvel a que pertence. ${OBRIGATORIO}`,
     },
   },
   {
     id: 'property_sale',
     categoria: 'property_sale',
-    titulo: 'Mais/menos-valias — imóveis',
+    titulo: 'Mais-Valias (Imóveis)',
     ajuda: 'Um imóvel por cada venda, com as datas e os valores de compra e de venda.',
     porImovel: true,
     maisValias: true,
@@ -105,13 +107,13 @@ export const SEPARADORES: Separador[] = [
     documentos: {
       tipos: ['Escritura de Compra', 'Escritura de Venda', 'Despesas', 'Reinvestimento HPP', 'Outros'],
       obrigatorio: true,
-      nota: 'Obrigatórios. Cada documento tem de dizer a que imóvel pertence.',
+      nota: `Escrituras de compra e de venda e despesas. Cada documento indica o imóvel a que pertence. ${OBRIGATORIO}`,
     },
   },
   {
     id: 'securities_sale',
     categoria: 'securities',
-    titulo: 'Mais/menos-valias — ações e outros',
+    titulo: 'Mais-Valias (Ações e Outros)',
     ajuda: 'Com as mesmas datas e valores dos imóveis: compra, venda e despesas.',
     maisValias: true,
     tipos: ['Ações', 'Obrigações', 'Unidades de Participação', 'Outros'],
@@ -119,13 +121,13 @@ export const SEPARADORES: Separador[] = [
     documentos: {
       tipos: [SUPORTE],
       obrigatorio: true,
-      nota: 'Obrigatórios. Envie os documentos anuais da corretora, que já trazem os códigos certos.',
+      nota: `Os documentos fiscais anuais da corretora, que já trazem os códigos certos. ${OBRIGATORIO}`,
     },
   },
   {
     id: 'foreign_income',
     categoria: 'foreign_income',
-    titulo: 'Rendimentos estrangeiros',
+    titulo: 'Rendimentos Estrangeiros',
     ajuda: 'Obtidos fora de Portugal, agrupados pelo tipo a que correspondem.',
     porAmbito: true,
     tipos: [],
@@ -139,7 +141,7 @@ export const SEPARADORES: Separador[] = [
         'Outros',
       ],
       obrigatorio: true,
-      nota: 'Obrigatórios, por tipo de rendimento.',
+      nota: `Comprovativos de cada rendimento obtido no estrangeiro. ${OBRIGATORIO}`,
     },
   },
 ];
@@ -157,11 +159,11 @@ export const AMBITOS: { id: string; titulo: string }[] = [
 
 export const DEDUCOES = {
   id: 'deduction',
-  titulo: 'Deduções e benefícios',
+  titulo: 'Deduções e Benefícios',
   ajuda: 'Deduções à coleta e benefícios fiscais.',
   documentos: {
     tipos: ['PPR', 'Despesas com ascendentes', 'Arrendamento', 'Outros'],
-    nota: 'O comprovativo do PPR é obrigatório quando declara um.',
+    nota: 'Obrigatório: os comprovativos de cada dedução ou benefício que indicar (PPR, despesas com ascendentes, arrendamento).',
   },
 };
 

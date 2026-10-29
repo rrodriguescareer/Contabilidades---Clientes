@@ -64,7 +64,14 @@ test('production registration, administration, quotations, checkout and private 
   const newCase=async(account=a)=>{await actor(ids.staff);const id=(await db.query('select public.create_irs_case($1,$2) as id',[account,year++])).rows[0].id;
    await db.exec('reset role');await db.query("insert into public.tax_credentials(person_id,account_id,encrypted_password) select cp.person_id,cp.account_id,'ensaio' from public.case_people cp where cp.case_id=$1 and cp.relationship='titular' on conflict (person_id) do nothing",[id]);
    await actor(account===a?ids.a:ids.b);return id;};
-  const income=async(process,category,{person=holder,property=null,account=a}={})=>db.query("insert into public.income_records(account_id,case_id,category,person_id,property_id,title,mode) values($1,$2,$3,$4,$5,'Income','documents')",[account,process,category,person,property]);
+  // Cada rendimento vem com o seu documento: sem ele o processo não fica pronto.
+  const income=async(process,category,{person=holder,property=null,account=a,comDocumento=true}={})=>{
+   const r=await db.query("insert into public.income_records(account_id,case_id,category,person_id,property_id,title,mode) values($1,$2,$3,$4,$5,'Income','documents')",[account,process,category,person,property]);
+   if(comDocumento){
+    const {rows:[d]}=await db.query("insert into public.documents(account_id,case_id,kind,file_name,storage_path,mime_type,file_size,content_hash,category) values($1::uuid,$2::uuid,'Suporte','f.pdf',$1::text||'/'||$2::text||'/'||gen_random_uuid()::text,'application/pdf',10,encode(sha256(gen_random_uuid()::text::bytea),'hex'),$3) returning id",[account,process,category]);
+    await db.query("update public.documents set state='uploaded' where id=$1",[d.id]);
+   }
+   return r;};
   const property=async(process,account=a)=>(await db.query("insert into public.property_assets(account_id,case_id,label) values($1,$2,'Property') returning id",[account,process])).rows[0].id;
   const quote=async(process,coupon='',account=a)=>(await db.query('select public.quote_irs_checkout($1,$2,$3) as quote',[account,process,coupon])).rows[0].quote;
   await t.test('pricing counts people, categories and distinct properties using integer cents',async()=>{
@@ -173,6 +180,37 @@ test('production registration, administration, quotations, checkout and private 
    assert.equal((await db.query('select count(*)::int as n from public.progress_events where case_id=$1',[c])).rows[0].n,1);
    assert.equal((await db.query('select status from public.irs_cases where id=$1',[c])).rows[0].status,'submitted_by_client');
   });
+  await t.test('the accountant refunds part of a payment and requests an extra one the client pays',async()=>{
+   const c=await newCase();await income(c,'employment');
+   const k=(await db.query("select public.begin_irs_checkout($1,$2,'') as data",[a,c])).rows[0].data;
+   await actor(ids.staff,'service_role');
+   await db.query("select public.anexar_sessao_de_pagamento($1,'cs_test_reembolso','')",[k.id]);
+   await db.query("select public.finalizar_pagamento_stripe($1,'cs_test_reembolso',$2,true,false,$3,'eur')",[k.id,k.id,k.amount_cents]);
+   // Só o gabinete reembolsa, e nunca mais do que foi pago.
+   await actor(ids.a);await assert.rejects(db.query("select public.registar_reembolso($1,100,'Teste')",[k.id]));
+   await actor(ids.staff);
+   const r=(await db.query("select public.registar_reembolso($1,500,'Desconto acordado') as id",[k.id])).rows[0].id;
+   await assert.rejects(db.query("select public.registar_reembolso($1,$2,'Demasiado')",[k.id,k.amount_cents]),/excede/);
+   await db.query("select public.concluir_reembolso($1,'re_test_1','succeeded','NC 1',null,false)",[r]);
+   await db.exec('reset role');
+   assert.equal((await db.query('select estado from public.reembolsos where id=$1',[r])).rows[0].estado,'feito');
+   assert.equal((await db.query("select count(*)::int as n from public.progress_events where case_id=$1 and title='Reembolso processado'",[c])).rows[0].n,1);
+   // Pagamento adicional: pedido pelo gabinete, pago pelo cliente, sem mexer na fase.
+   await actor(ids.staff);
+   const extra=(await db.query("select public.criar_pagamento_extra($1,2500,'Anexo adicional de mais-valias') as id",[c])).rows[0].id;
+   await actor(ids.b);await assert.rejects(db.query('select public.iniciar_pagamento_extra($1)',[extra]));
+   await actor(ids.a);
+   assert.equal((await db.query('select public.iniciar_pagamento_extra($1) as d',[extra])).rows[0].d.amount_cents,2500);
+   assert.equal((await db.query("select public.begin_irs_checkout($1,$2,'') as data",[a,c])).rows[0].data.id,k.id);
+   const antes=(await db.query('select status from public.irs_cases where id=$1',[c])).rows[0].status;
+   await actor(ids.staff,'service_role');
+   await db.query("select public.anexar_sessao_de_pagamento($1,'cs_test_extra','')",[extra]);
+   await db.query("select public.finalizar_pagamento_stripe($1,'cs_test_extra',$2,true,false,2500,'eur')",[extra,extra]);
+   await db.exec('reset role');
+   assert.equal((await db.query('select state from public.irs_checkouts where id=$1',[extra])).rows[0].state,'paid');
+   assert.equal((await db.query('select status from public.irs_cases where id=$1',[c])).rows[0].status,antes);
+   await actor(ids.a);
+  });
   await t.test('only the server settles a payment; visitors without a session run no function',async()=>{
    const c=await newCase();await income(c,'employment');
    const attempt=(await db.query("select public.begin_irs_checkout($1,$2,'') as data",[a,c])).rows[0].data;
@@ -184,6 +222,21 @@ test('production registration, administration, quotations, checkout and private 
    // O registo de atividade (prova em contestações) só o escreve o servidor.
    await actor(ids.a);
    await assert.rejects(db.query("select public.registar_atividade_de($1,'stripe_evento','inventado',$2,null,null)",[ids.a,c]),/permission denied/);
+  });
+  await t.test('every declared income needs a document; the client can delete one while preparing',async()=>{
+   const c=await newCase();await income(c,'employment');await income(c,'pension',{comDocumento:false});
+   const falta=()=>db.query('select public.prontidao_do_processo($1) as p',[c]).then(r=>r.rows[0].p.find(x=>x.chave==='documentos'));
+   assert.equal((await falta()).estado,'falta');assert.match((await falta()).detalhe,/Pensões/);
+   assert.equal((await db.query('select public.submeter_processo($1) as r',[c])).rows[0].r.ok,false);
+   await income(c,'pension');assert.equal((await falta()).estado,'ok');
+   const doc=(await db.query("select id,storage_path from public.documents where case_id=$1 and category='pension' limit 1",[c])).rows[0];
+   await actor(ids.b);await assert.rejects(db.query('select public.apagar_documento($1)',[doc.id]));
+   await actor(ids.a);assert.equal((await db.query('select public.apagar_documento($1) as p',[doc.id])).rows[0].p,doc.storage_path);
+   assert.equal((await falta()).estado,'falta');
+   // Depois de submetido, já não se apaga.
+   await income(c,'pension');assert.equal((await db.query('select public.submeter_processo($1) as r',[c])).rows[0].r.ok,true);
+   const outro=(await db.query("select id from public.documents where case_id=$1 limit 1",[c])).rows[0];
+   await assert.rejects(db.query('select public.apagar_documento($1)',[outro.id]));
   });
   await t.test('a client upload is finished only once the file is in storage',async()=>{
    const c=await newCase();
@@ -208,7 +261,7 @@ test('production registration, administration, quotations, checkout and private 
    await db.query("update public.documents set state='uploaded' where id=$1",[first.id]);
    const second=await prepare();assert.equal(second.reused,true);assert.equal(second.path,first.path);assert.notEqual(second.id,first.id);
    await db.query("update public.documents set state='uploaded' where id=$1",[second.id]);
-   await actor(ids.b);assert.equal((await db.query('select * from public.documents')).rows.length,0);
+   await actor(ids.b);assert.equal((await db.query('select * from public.documents where account_id=$1',[a])).rows.length,0);
    await assert.rejects(db.query("select public.prepare_irs_document($1,$2,null,'Other','file.pdf','application/pdf',10,$3)",[a,c,hash]));
   });
   await t.test('blocking revokes reads with an existing session; deleting authentication preserves fiscal originals',async()=>{

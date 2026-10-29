@@ -3,6 +3,7 @@
 export { ROTULOS as ESTADOS, MEUS } from '@/lib/fluxo';
 
 export const PAGAMENTOS: Record<string, string> = {
+  creating: 'A aguardar o cliente',
   paid: 'Pago',
   pending: 'A aguardar',
   unknown: 'Por confirmar',

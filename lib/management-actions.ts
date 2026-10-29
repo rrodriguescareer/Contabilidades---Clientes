@@ -42,6 +42,18 @@ export async function deleteUser(form:FormData){
   if(semFicheiros){ficheirosEmFalta+=caminhos.slice(i,i+100).length;console.error(JSON.stringify({event:'rr_ficheiros_por_apagar',erro:semFicheiros.message}));}
  }
 
+ // Rede de segurança: o que ainda estiver nas pastas das contas apagadas
+ // (cada conta tem a sua pasta, com uma subpasta por processo) sai também.
+ const armazem=adminClient().storage.from('irs-documents');
+ for(const conta of [...new Set(caminhos.map(c=>c.split('/')[0]).filter(Boolean))]){
+  const {data:processos}=await armazem.list(conta,{limit:1000});
+  for(const p of processos||[]){
+   const {data:ficheiros}=await armazem.list(`${conta}/${p.name}`,{limit:1000});
+   const restos=(ficheiros||[]).map(f=>`${conta}/${p.name}/${f.name}`);
+   if(restos.length){const {error:semRestos}=await armazem.remove(restos);if(!semRestos&&ficheirosEmFalta)ficheirosEmFalta=Math.max(0,ficheirosEmFalta-restos.length);}
+  }
+ }
+
  const {error:semAuth}=await adminClient().auth.admin.deleteUser(target,false);
  if(semAuth&&!/not.?found/i.test(semAuth.message)){
   console.error(JSON.stringify({event:'rr_auth_por_apagar',erro:semAuth.message}));

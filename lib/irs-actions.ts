@@ -4,9 +4,10 @@ import { session } from './auth';
 import { adminClient } from './admin-client';
 import { uuid } from './data';
 import {
-  criarFichaCliente, emitirFaturaRecibo, guardarCredenciais, origemDasCredenciais,
-  temCredenciais, testarLigacao,
+  criarFichaCliente, emitirFaturaRecibo, emitirNotaCredito, guardarCredenciais, idDoDocumento,
+  origemDasCredenciais, temCredenciais, testarLigacao,
 } from './cegid';
+import { expirarSessao, reembolsarNaStripe } from './stripe-gestao';
 
 /* As ações do gabinete do IRS, agora dentro da gestão. Vieram da plataforma
    do IRS com a consola; a gestão só deixa entrar quem é do gabinete (o
@@ -180,12 +181,15 @@ export async function emitirFaturaCegid(processo: string): Promise<Resposta> {
   if (!alvo) return { ok: false, erro: 'Processo não encontrado.' };
   if (!alvo.perfil?.nif) return { ok: false, erro: 'O cliente ainda não tem NIF no perfil.' };
   const { data: pago } = await adminClient()
-    .from('irs_checkouts').select('amount_cents').eq('case_id', processo).eq('state', 'paid')
-    .order('paid_at', { ascending: false }).limit(1).maybeSingle();
+    .from('irs_checkouts').select('id, amount_cents').eq('case_id', processo).eq('state', 'paid')
+    .eq('tipo', 'preparacao').order('paid_at', { ascending: false }).limit(1).maybeSingle();
   // Sem pagamento ainda: emite-se o mínimo para provar a API.
   const total = pago?.amount_cents ?? 100;
   const r = await emitirFaturaRecibo({ nif: alvo.perfil.nif, nome: alvo.nome, descricao: 'IRS 2026', totalCents: total });
   if (!r.ok) return { ok: false, erro: r.nifInvalido ? `O Cegid recusou o NIF ${alvo.perfil.nif}.` : r.erro };
+  // O id fica no pagamento: é por ele que uma nota de crédito se liga a esta fatura.
+  const documento = idDoDocumento(r.dados);
+  if (pago && documento) await (await session()).client.rpc('guardar_cegid_do_pagamento', { p_checkout: pago.id, p_documento: documento });
   await registarCegid('cegid_fatura', `${(total / 100).toFixed(2).replace('.', ',')} € · NIF ${alvo.perfil.nif} · em preparação`, alvo.conta, processo);
   return {
     ok: true,
@@ -193,4 +197,123 @@ export async function emitirFaturaCegid(processo: string): Promise<Resposta> {
       ? 'Fatura-recibo criada no Cegid, em preparação.'
       : `Fatura-recibo de teste criada (${(total / 100).toFixed(2)} €), em preparação.`,
   };
+}
+
+/* ------------------------------------------- reembolsos e pagamentos extra */
+
+const euros = (c: number) => (c / 100).toFixed(2).replace('.', ',') + ' €';
+const centimos = (texto: string) => {
+  const n = Number(String(texto || '').replace(/\s|€/g, '').replace(',', '.'));
+  return Number.isFinite(n) ? Math.round(n * 100) : NaN;
+};
+
+/** Reembolso parcial ou total. Primeiro o dinheiro (Stripe), depois o
+    documento (nota de crédito em rascunho no Cegid). Se o Cegid falhar, o
+    reembolso fica feito e a nota pode ser criada outra vez. */
+export async function reembolsar(checkout: string, valor: string, motivo: string, origemRef = ''): Promise<Resposta> {
+  const { client } = await session();
+  if (!uuid(checkout)) return { ok: false, erro: 'Pagamento inválido.' };
+  const cents = centimos(valor);
+  if (!Number.isInteger(cents) || cents <= 0) return { ok: false, erro: 'Indique o valor a reembolsar.' };
+
+  const { data: id, error } = await client.rpc('registar_reembolso', {
+    p_checkout: checkout, p_valor: cents, p_motivo: motivo.trim(),
+  });
+  if (error || typeof id !== 'string') return { ok: false, erro: error?.code === '22023' ? error.message : 'Não foi possível registar o reembolso.' };
+
+  const { data: k } = await adminClient().from('irs_checkouts')
+    .select('provider_order_id, case_id, account_id, cegid_documento, descricao, tipo').eq('id', checkout).single();
+  const stripe = await reembolsarNaStripe(k?.provider_order_id || '', cents, id);
+  if (!stripe.ok) {
+    await client.rpc('concluir_reembolso', { p_reembolso: id, p_stripe_id: null, p_stripe_estado: null, p_cegid: null, p_cegid_erro: null, p_falhou: true });
+    await registarCegid('reembolso_falhou', `${euros(cents)} · ${stripe.erro}`, k?.account_id || null, k?.case_id || '');
+    return { ok: false, erro: `A Stripe recusou o reembolso: ${stripe.erro}` };
+  }
+
+  const nota = await notaDeCredito(k?.case_id || '', cents, motivo, k?.cegid_documento || null, origemRef, k?.descricao || null);
+  await client.rpc('concluir_reembolso', {
+    p_reembolso: id, p_stripe_id: stripe.dados.id, p_stripe_estado: stripe.dados.status,
+    p_cegid: nota.ok ? nota.id : null, p_cegid_erro: nota.ok ? null : nota.erro, p_falhou: false,
+  });
+  await registarCegid('reembolso',
+    `${euros(cents)} · Stripe ${stripe.dados.id} (${stripe.dados.status}) · ${nota.ok ? `nota de crédito em rascunho no Cegid ${nota.id}` : `nota de crédito por criar: ${nota.erro}`} · motivo: ${motivo.trim()}`,
+    k?.account_id || null, k?.case_id || '');
+  revalidatePath('/irs');
+  return nota.ok
+    ? { ok: true, aviso: `Reembolso de ${euros(cents)} feito na Stripe e nota de crédito guardada em rascunho no Cegid.` }
+    : { ok: true, aviso: `Reembolso de ${euros(cents)} feito na Stripe. A nota de crédito não foi criada: ${nota.erro}` };
+}
+
+async function notaDeCredito(processo: string, cents: number, motivo: string,
+  origemId: string | null, origemRef: string, descricao: string | null) {
+  const alvo = await titularDoProcesso(processo);
+  if (!alvo?.perfil?.nif) return { ok: false as const, erro: 'O cliente não tem NIF no perfil.' };
+  if (!origemId && !origemRef.trim()) {
+    return { ok: false as const, erro: 'Falta o documento de origem: indique a referência da fatura-recibo (ex.: FR 2026/12).' };
+  }
+  const r = await emitirNotaCredito({
+    nif: alvo.perfil.nif, nome: alvo.nome, totalCents: cents, motivo: motivo.trim(),
+    descricao: `Reembolso — ${descricao || 'Preparação do IRS 2026'}`,
+    origemId, origemRef: origemRef.trim() || null,
+  });
+  if (!r.ok) return { ok: false as const, erro: r.nifInvalido ? `O Cegid recusou o NIF ${alvo.perfil.nif}.` : r.erro };
+  return { ok: true as const, id: idDoDocumento(r.dados) || 'criada' };
+}
+
+/** Criar outra vez a nota de crédito de um reembolso já feito na Stripe. */
+export async function repetirNotaCredito(reembolso: string, origemRef = ''): Promise<Resposta> {
+  const { client } = await session();
+  if (!uuid(reembolso)) return { ok: false, erro: 'Reembolso inválido.' };
+  const { data: r } = await adminClient().from('reembolsos')
+    .select('amount_cents, motivo, case_id, account_id, cegid_documento, checkout_id, irs_checkouts(cegid_documento, descricao)')
+    .eq('id', reembolso).single();
+  if (!r) return { ok: false, erro: 'Reembolso inexistente.' };
+  if (r.cegid_documento) return { ok: true, aviso: 'A nota de crédito já existe.' };
+  const k = (r as { irs_checkouts?: { cegid_documento?: string | null; descricao?: string | null } }).irs_checkouts;
+  const nota = await notaDeCredito(r.case_id, r.amount_cents, r.motivo, k?.cegid_documento || null, origemRef, k?.descricao || null);
+  if (!nota.ok) {
+    await client.rpc('concluir_reembolso', { p_reembolso: reembolso, p_stripe_id: null, p_stripe_estado: null, p_cegid: null, p_cegid_erro: nota.erro, p_falhou: false });
+    return { ok: false, erro: nota.erro };
+  }
+  await client.rpc('concluir_reembolso', { p_reembolso: reembolso, p_stripe_id: null, p_stripe_estado: null, p_cegid: nota.id, p_cegid_erro: null, p_falhou: false });
+  await registarCegid('reembolso', `Nota de crédito em rascunho no Cegid ${nota.id} · ${euros(r.amount_cents)}`, r.account_id, r.case_id);
+  revalidatePath('/irs');
+  return { ok: true, aviso: 'Nota de crédito guardada em rascunho no Cegid.' };
+}
+
+/** Pagamento adicional combinado com o cliente. Fica uma fatura-recibo em
+    rascunho no Cegid e o pedido aparece ao cliente no separador Pagamento. */
+export async function pedirPagamentoExtra(processo: string, valor: string, descricao: string): Promise<Resposta> {
+  const { client } = await session();
+  if (!uuid(processo)) return { ok: false, erro: 'Processo inválido.' };
+  const cents = centimos(valor);
+  if (!Number.isInteger(cents) || cents < 50) return { ok: false, erro: 'Indique um valor de pelo menos 0,50 €.' };
+  const { data: id, error } = await client.rpc('criar_pagamento_extra', {
+    p_processo: processo, p_valor: cents, p_descricao: descricao.trim(),
+  });
+  if (error || typeof id !== 'string') return { ok: false, erro: error?.code === '22023' ? error.message : 'Não foi possível criar o pedido.' };
+
+  const alvo = await titularDoProcesso(processo);
+  let aviso = `Pedido de ${euros(cents)} enviado ao cliente.`;
+  if (alvo?.perfil?.nif) {
+    const r = await emitirFaturaRecibo({ nif: alvo.perfil.nif, nome: alvo.nome, descricao: descricao.trim(), totalCents: cents });
+    const documento = r.ok ? idDoDocumento(r.dados) : null;
+    if (documento) await client.rpc('guardar_cegid_do_pagamento', { p_checkout: id, p_documento: documento });
+    aviso += r.ok ? ' Fatura-recibo guardada em rascunho no Cegid.' : ` A fatura-recibo não foi criada no Cegid: ${r.erro}`;
+  } else {
+    aviso += ' A fatura-recibo não foi criada no Cegid: o cliente não tem NIF no perfil.';
+  }
+  await registarCegid('pagamento_extra', `${euros(cents)} · ${descricao.trim()}`, alvo?.conta || null, processo);
+  revalidatePath('/irs');
+  return { ok: true, aviso };
+}
+
+export async function anularPagamentoExtra(checkout: string): Promise<Resposta> {
+  const { client } = await session();
+  if (!uuid(checkout)) return { ok: false, erro: 'Pagamento inválido.' };
+  const { data: sessao, error } = await client.rpc('cancelar_pagamento_extra', { p_checkout: checkout });
+  if (error) return { ok: false, erro: error.code === '22023' ? error.message : 'Não foi possível anular.' };
+  await expirarSessao(typeof sessao === 'string' ? sessao : null);
+  revalidatePath('/irs');
+  return { ok: true, aviso: 'Pedido anulado. Se havia fatura-recibo em rascunho no Cegid, apague-a lá.' };
 }

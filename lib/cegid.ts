@@ -328,3 +328,39 @@ export async function emitirFaturaRecibo(fatura: Fatura) {
     },
   });
 }
+
+/** O id do documento na resposta do Cegid (JSON:API ou plano). */
+export function idDoDocumento(dados: unknown): string | null {
+  const d = dados as { data?: { id?: string | number }; id?: string | number } | null;
+  const id = d?.data?.id ?? d?.id;
+  return id == null ? null : String(id);
+}
+
+/* Nota de crédito, em rascunho (finalize: false): fica em preparação no Cegid
+   para ser revista e finalizada lá. Liga-se à fatura-recibo de origem pelo id
+   interno do Cegid, quando se sabe, ou pela referência escrita (ex.: FR 2026/12). */
+export async function emitirNotaCredito(nota: {
+  nif: string; nome: string; descricao: string; totalCents: number; motivo: string;
+  origemId?: string | null; origemRef?: string | null;
+}) {
+  const origem = nota.origemId
+    ? { parent_documents_ids: [nota.origemId] }
+    : nota.origemRef ? { parent_document_reference: nota.origemRef } : {};
+  return chamar<Record<string, unknown>>('/v1/commercial_sales_documents', {
+    metodo: 'POST',
+    jsonApi: true,
+    corpo: {
+      document_type: 'NC',
+      ...origem,
+      customer_tax_registration_number: nota.nif,
+      customer_business_name: nota.nome,
+      customer_country: 'PT',
+      vat_included_prices: true,
+      finalize: false,
+      notes: `Motivo: ${nota.motivo}`.slice(0, 500),
+      lines: [
+        { description: nota.descricao, quantity: 1, unit_price: nota.totalCents / 100, tax_code: 'NOR' },
+      ],
+    },
+  });
+}

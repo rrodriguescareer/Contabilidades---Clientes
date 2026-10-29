@@ -1,10 +1,10 @@
 /* O fluxo do processo, num sítio só.
-   Antes havia três listas de estados — uma no percurso do cliente, uma na
-   consola e uma no lib/data.ts — e nenhuma dizia a que nível do processo cada
-   estado pertencia. São quatro fases: a recolha é do cliente, a análise é
-   minha, a entrega é na AT e a conclusão é a resposta dela. */
+   A base de dados tem doze estados, que servem o trabalho do gabinete. O
+   cliente vê cinco etapas, com nomes que dizem o que está a acontecer:
+   preparação (do cliente), revisão (do contabilista), entrega à AT,
+   liquidação pela AT e conclusão. Cada estado pertence a uma etapa. */
 
-export type Fase = 'recolha' | 'analise' | 'entrega' | 'conclusao';
+export type Fase = 'preparacao' | 'revisao' | 'entrega' | 'liquidacao' | 'concluido';
 /** De quem se espera o próximo movimento. É isto que decide o tom do ecrã. */
 export type Espera = 'cliente' | 'gabinete' | 'at' | 'ninguem';
 
@@ -15,7 +15,7 @@ export type Estado = {
   titulo: string;
   /** A frase que explica o momento ao cliente. */
   nota: string;
-  /** O nome curto que eu vejo na consola e nas listas. */
+  /** O nome curto que o gabinete vê na consola e nas listas. */
   curto: string;
   espera: Espera;
   /** Fora da linha principal: devolvido e divergência são desvios. */
@@ -23,72 +23,73 @@ export type Estado = {
 };
 
 export const FASES: { id: Fase; titulo: string; nota: string }[] = [
-  { id: 'recolha', titulo: 'Recolha', nota: 'Reunir os dados e os documentos do agregado.' },
-  { id: 'analise', titulo: 'Análise', nota: 'Conferência e aprovação no gabinete.' },
-  { id: 'entrega', titulo: 'Entrega', nota: 'Submissão da declaração na Autoridade Tributária.' },
-  { id: 'conclusao', titulo: 'Conclusão', nota: 'Liquidação, reembolso ou pagamento.' },
+  { id: 'preparacao', titulo: 'Preparação', nota: 'Dados e documentos do agregado.' },
+  { id: 'revisao', titulo: 'Revisão', nota: 'Conferência pelo contabilista certificado.' },
+  { id: 'entrega', titulo: 'Entrega à AT', nota: 'Submissão da declaração no Portal das Finanças.' },
+  { id: 'liquidacao', titulo: 'Liquidação', nota: 'Validação e liquidação pela Autoridade Tributária.' },
+  { id: 'concluido', titulo: 'Concluído', nota: 'Reembolso ou pagamento do imposto e fecho do processo.' },
 ];
 
 export const ESTADOS: Estado[] = [
   {
-    id: 'collecting', fase: 'recolha', espera: 'cliente',
-    titulo: 'Em recolha', curto: 'Em recolha',
-    nota: 'Está a reunir os dados e os documentos. Quando estiver tudo, submete o processo.',
+    id: 'collecting', fase: 'preparacao', espera: 'cliente',
+    titulo: 'Em preparação', curto: 'Em preparação',
+    nota: 'Reúna os dados e os documentos do agregado. Quando estiver tudo, submeta o processo.',
   },
   {
-    id: 'returned', fase: 'recolha', espera: 'cliente', desvio: true,
-    titulo: 'Devolvido para completar', curto: 'Devolvido',
-    nota: 'Faltam elementos. Complete o que está em falta e submeta outra vez.',
+    id: 'returned', fase: 'preparacao', espera: 'cliente', desvio: true,
+    titulo: 'Devolvido para correção', curto: 'Devolvido',
+    nota: 'Foram pedidos elementos adicionais. Consulte a nota no acompanhamento, complete o processo e volte a submeter.',
   },
   {
-    id: 'submitted_by_client', fase: 'analise', espera: 'gabinete',
-    titulo: 'Submetido', curto: 'Submetido',
-    nota: 'Recebi o processo. Está na minha fila.',
+    id: 'submitted_by_client', fase: 'revisao', espera: 'gabinete',
+    titulo: 'Recebido', curto: 'Submetido',
+    nota: 'O processo foi recebido e aguarda o início da revisão.',
   },
   {
-    id: 'accepted', fase: 'analise', espera: 'gabinete',
-    titulo: 'Aceite', curto: 'Aceite',
-    nota: 'Confirmei a receção e abri o processo.',
+    id: 'accepted', fase: 'revisao', espera: 'gabinete',
+    titulo: 'Em revisão', curto: 'Aceite',
+    nota: 'O processo foi aceite e os elementos vão ser conferidos.',
   },
   {
-    id: 'validation', fase: 'analise', espera: 'gabinete',
+    id: 'validation', fase: 'revisao', espera: 'gabinete',
     titulo: 'Em validação', curto: 'Em validação',
-    nota: 'Estou a conferir os rendimentos e os documentos.',
+    nota: 'Os rendimentos e os documentos estão a ser conferidos com a informação da AT.',
   },
   {
-    id: 'approved', fase: 'analise', espera: 'gabinete',
-    titulo: 'Aprovado', curto: 'Aprovado',
-    nota: 'Está tudo conferido. Segue para submissão.',
+    id: 'approved', fase: 'revisao', espera: 'gabinete',
+    titulo: 'Revisão concluída', curto: 'Aprovado',
+    nota: 'A revisão está concluída. A declaração segue para entrega.',
   },
   {
     id: 'submitting', fase: 'entrega', espera: 'gabinete',
-    titulo: 'Em submissão', curto: 'Em submissão',
-    nota: 'A declaração está a ser entregue no Portal das Finanças.',
+    titulo: 'Em entrega', curto: 'Em submissão',
+    nota: 'A declaração está a ser submetida no Portal das Finanças.',
   },
   {
     id: 'filed', fase: 'entrega', espera: 'at',
-    titulo: 'Submetido na AT', curto: 'Entregue',
-    nota: 'Entregue. Fica registado o valor apurado.',
+    titulo: 'Entregue na AT', curto: 'Entregue',
+    nota: 'A declaração foi entregue na Autoridade Tributária.',
   },
   {
-    id: 'monitoring', fase: 'conclusao', espera: 'at',
-    titulo: 'Em acompanhamento', curto: 'Acompanhamento',
-    nota: 'À espera da validação da Autoridade Tributária.',
+    id: 'monitoring', fase: 'liquidacao', espera: 'at',
+    titulo: 'A aguardar liquidação', curto: 'Acompanhamento',
+    nota: 'Aguarda-se a validação e a liquidação pela Autoridade Tributária.',
   },
   {
-    id: 'divergence', fase: 'conclusao', espera: 'gabinete', desvio: true,
-    titulo: 'Em divergência', curto: 'Divergência',
-    nota: 'A Autoridade Tributária levantou uma questão. Estou a tratar dela.',
+    id: 'divergence', fase: 'liquidacao', espera: 'gabinete', desvio: true,
+    titulo: 'Divergência em análise', curto: 'Divergência',
+    nota: 'A Autoridade Tributária identificou uma divergência. O assunto está a ser tratado.',
   },
   {
-    id: 'assessed', fase: 'conclusao', espera: 'at',
+    id: 'assessed', fase: 'liquidacao', espera: 'at',
     titulo: 'Liquidação emitida', curto: 'Liquidada',
-    nota: 'A liquidação saiu. O valor apurado está confirmado.',
+    nota: 'A liquidação foi emitida e o valor apurado está confirmado.',
   },
   {
-    id: 'closed', fase: 'conclusao', espera: 'ninguem',
-    titulo: 'Fechado', curto: 'Fechado',
-    nota: 'Processo concluído.',
+    id: 'closed', fase: 'concluido', espera: 'ninguem',
+    titulo: 'Concluído', curto: 'Fechado',
+    nota: 'O processo está concluído.',
   },
 ];
 
@@ -130,20 +131,31 @@ export const LINHA = ESTADOS.filter((e) => !e.desvio);
 /** Quantos passos da linha principal já ficaram para trás. */
 export function posicao(estado: string | null | undefined) {
   const e = estadoDe(estado);
-  if (!e) return { indice: 0, fase: 'recolha' as Fase, total: LINHA.length };
+  if (!e) return { indice: 0, fase: 'preparacao' as Fase, total: LINHA.length, etapa: 0, etapas: FASES.length };
   // Um desvio conta como estando no primeiro passo da sua fase.
   const alvo = e.desvio ? LINHA.find((x) => x.fase === e.fase) : e;
   return {
     indice: LINHA.findIndex((x) => x.id === alvo?.id),
     fase: e.fase,
     total: LINHA.length,
+    /** A etapa (de cinco) que o cliente vê. */
+    etapa: FASES.findIndex((f) => f.id === e.fase),
+    etapas: FASES.length,
   };
 }
 
-/** A frase do topo: quem está a trabalhar agora. */
+/** O selo do estado, para o cliente: de quem depende o passo seguinte. */
 export const QUEM: Record<Espera, string> = {
-  cliente: 'À espera de si',
-  gabinete: 'Comigo',
+  cliente: 'Aguarda a sua ação',
+  gabinete: 'Em análise pelo contabilista',
+  at: 'Na Autoridade Tributária',
+  ninguem: 'Concluído',
+};
+
+/** O mesmo selo, visto do gabinete. */
+export const QUEM_GABINETE: Record<Espera, string> = {
+  cliente: 'Aguarda o cliente',
+  gabinete: 'Aguarda a sua ação',
   at: 'Na Autoridade Tributária',
   ninguem: 'Concluído',
 };

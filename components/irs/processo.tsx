@@ -1,6 +1,8 @@
 'use client';
 import { useActionState, useEffect, useRef, useState, useTransition } from 'react';
-import { enviarMensagem, verSenhaFinancas } from '@/lib/irs-actions';
+import {
+  anularPagamentoExtra, enviarMensagem, pedirPagamentoExtra, reembolsar, repetirNotaCredito, verSenhaFinancas,
+} from '@/lib/irs-actions';
 import { emRecolha, posicao, estadoDe, type Prontidao } from '@/lib/fluxo';
 import { AMBITOS, DEDUCOES, SEPARADORES, pertence } from './separadores';
 import { Avanco } from './avanco';
@@ -172,7 +174,8 @@ export function Processo({ dados, processo, abaInicial, aoMudar }:
       {aba === 'mensagens' && (
         <Conversa processo={processo} conta={String(cab.conta || '')} mensagens={mensagens} aoMudar={aoMudar} />
       )}
-      {aba === 'pagamento' && <Pagamento checkout={checkout} processo={processo} />}
+      {aba === 'pagamento' && <Pagamento checkout={checkout} processo={processo} aoMudar={aoMudar}
+                                         movimentos={(dados.movimentos as Movimento[]) || []} />}
       {aba === 'historico' && (
         <section className={e.cartao}>
           <h3 className={e.tituloCartao}>Histórico do processo</h3>
@@ -496,12 +499,35 @@ function Conversa({ processo, conta, mensagens, aoMudar }:
 
 /* ------------------------------------------------------------- pagamento */
 
-function Pagamento({ checkout, processo }: { checkout: Record<string, unknown> | null; processo: string }) {
+type Reembolso = { id: string; total: number; motivo: string; estado: string; em: string;
+  stripe: string | null; cegid: string | null; cegid_erro: string | null };
+type Movimento = { id: string; tipo: string; estado: string; total: number; descricao: string | null;
+  criado: string; pago_em: string | null; cegid: string | null; stripe: string | null; reembolsos: Reembolso[] };
+
+/* Os pagamentos do processo: a preparação, os pagamentos adicionais que o
+   gabinete pediu, e os reembolsos de cada um. Reembolsar e pedir um pagamento
+   adicional começam sempre aqui. */
+function Pagamento({ checkout, movimentos, processo, aoMudar }:
+  { checkout: Record<string, unknown> | null; movimentos: Movimento[]; processo: string; aoMudar: () => void }) {
   const detalhe = (checkout?.detalhe as { items?: { code: string; label: string; amount_cents: number }[]; discount_code?: string } | null) || null;
+  const [aviso, setAviso] = useState<{ ok: boolean; texto: string } | null>(null);
+  const [aCorrer, correr] = useTransition();
+  const [abertoPara, setAbertoPara] = useState<string | null>(null);
+
+  const executar = (fazer: () => Promise<{ ok: boolean; erro?: string; aviso?: string }>) =>
+    correr(async () => {
+      setAviso(null);
+      const r = await fazer();
+      setAviso({ ok: r.ok, texto: r.ok ? r.aviso || 'Feito.' : r.erro || 'Não foi possível.' });
+      if (r.ok) { setAbertoPara(null); aoMudar(); }
+    });
+
   return (
     <>
+      {aviso && <p className={aviso.ok ? 'aviso-positivo' : 'aviso-critico'}>{aviso.texto}</p>}
+
       <section className={e.cartao}>
-        <h3 className={e.tituloCartao}>Pagamento</h3>
+        <h3 className={e.tituloCartao}>Preparação do IRS</h3>
         {!checkout ? <div className={e.vazio}>O cliente ainda não iniciou o pagamento.</div> : (
           <>
             <p>
@@ -524,7 +550,150 @@ function Pagamento({ checkout, processo }: { checkout: Record<string, unknown> |
           </>
         )}
       </section>
+
+      <section className={e.cartao}>
+        <h3 className={e.tituloCartao}>Movimentos e reembolsos</h3>
+        {movimentos.length === 0 ? <div className={e.vazio}>Sem movimentos.</div> : (
+          <ul className={e.movimentos}>
+            {movimentos.map((m) => {
+              const reembolsado = m.reembolsos.filter((r) => r.estado === 'feito').reduce((t, r) => t + r.total, 0);
+              const falta = m.total - reembolsado;
+              const podeReembolsar = m.estado === 'paid' && Boolean(m.stripe) && falta > 0;
+              const podeAnular = m.tipo === 'extra' && ['creating', 'failed'].includes(m.estado);
+              return (
+                <li key={m.id}>
+                  <div className={e.movimentoTopo}>
+                    <div>
+                      <strong>{m.tipo === 'extra' ? m.descricao || 'Pagamento adicional' : 'Preparação do IRS'}</strong>
+                      <span className={e.sub}>
+                        {m.tipo === 'extra' ? 'Pagamento adicional' : 'Preparação'} · pedido a {dia(m.criado)}
+                        {m.pago_em ? ` · pago a ${hora(m.pago_em)}` : ''}{m.cegid ? ` · Cegid ${m.cegid}` : ''}
+                      </span>
+                    </div>
+                    <div className={e.movimentoValor}>
+                      <strong>{euros(m.total)}</strong>
+                      <span className={e.etiqueta} data-tom={m.estado === 'paid' ? 'ok' : 'atencao'}>{PAGAMENTOS[m.estado] || m.estado}</span>
+                      {reembolsado > 0 && <span className={e.etiqueta} data-tom="info">Reembolsado {euros(reembolsado)}</span>}
+                    </div>
+                  </div>
+
+                  {m.reembolsos.length > 0 && (
+                    <ul className={e.reembolsos}>
+                      {m.reembolsos.map((r) => (
+                        <li key={r.id}>
+                          <span>{hora(r.em)} · {euros(r.total)} · {r.motivo}</span>
+                          <span>
+                            <span className={e.etiqueta} data-tom={r.estado === 'feito' ? 'ok' : r.estado === 'falhou' ? 'erro' : 'atencao'}>
+                              {r.estado === 'feito' ? 'Devolvido' : r.estado === 'falhou' ? 'Recusado' : 'A processar'}
+                            </span>
+                            {r.estado === 'feito' && (r.cegid
+                              ? <span className={e.sub}>NC em rascunho · Cegid {r.cegid}</span>
+                              : <RepetirNota reembolso={r} aCorrer={aCorrer} executar={executar} temOrigem={Boolean(m.cegid)} />)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
+                  {(podeReembolsar || podeAnular) && (
+                    <div className={e.movimentoAcoes}>
+                      {podeReembolsar && (
+                        <button type="button" className="btn btn-secundario btn-pequeno"
+                                onClick={() => setAbertoPara(abertoPara === m.id ? null : m.id)}>
+                          {abertoPara === m.id ? 'Fechar' : 'Reembolsar'}
+                        </button>
+                      )}
+                      {podeAnular && (
+                        <button type="button" className="btn-texto" disabled={aCorrer}
+                                onClick={() => window.confirm('Anular este pedido de pagamento?') && executar(() => anularPagamentoExtra(m.id))}>
+                          Anular pedido
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {abertoPara === m.id && podeReembolsar && (
+                    <form className={e.formReembolso} onSubmit={(ev) => {
+                      ev.preventDefault();
+                      const f = new FormData(ev.currentTarget);
+                      const valor = String(f.get('valor') || '');
+                      if (!window.confirm(`Reembolsar ${valor} € na Stripe e criar a nota de crédito no Cegid?`)) return;
+                      executar(() => reembolsar(m.id, valor, String(f.get('motivo') || ''), String(f.get('origem') || '')));
+                    }}>
+                      <label className="campo">
+                        <span>Valor (máximo {euros(falta)})</span>
+                        <input name="valor" className="entrada" inputMode="decimal" required
+                               defaultValue={(falta / 100).toFixed(2).replace('.', ',')} />
+                      </label>
+                      <label className="campo">
+                        <span>Motivo</span>
+                        <input name="motivo" className="entrada" required minLength={3} maxLength={500}
+                               placeholder="Ex.: desconto acordado, serviço não prestado" />
+                      </label>
+                      {!m.cegid && (
+                        <label className="campo">
+                          <span>Fatura-recibo de origem no Cegid</span>
+                          <input name="origem" className="entrada" required placeholder="Ex.: FR 2026/12" maxLength={60} />
+                        </label>
+                      )}
+                      <div>
+                        <button type="submit" className="btn" disabled={aCorrer}>{aCorrer ? 'A processar…' : 'Reembolsar'}</button>
+                      </div>
+                    </form>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
+      <section className={e.cartao}>
+        <h3 className={e.tituloCartao}>Pedir um pagamento adicional</h3>
+        <p className={e.sub}>Para um valor combinado com o cliente. Fica uma fatura-recibo em rascunho no Cegid e o pedido aparece ao cliente no separador Pagamento.</p>
+        <form className={e.formReembolso} onSubmit={(ev) => {
+          ev.preventDefault();
+          const f = new FormData(ev.currentTarget);
+          const valor = String(f.get('valor') || ''), descricao = String(f.get('descricao') || '');
+          if (!window.confirm(`Pedir ${valor} € ao cliente (${descricao})?`)) return;
+          const forma = ev.currentTarget;
+          executar(async () => { const r = await pedirPagamentoExtra(processo, valor, descricao); if (r.ok) forma.reset(); return r; });
+        }}>
+          <label className="campo">
+            <span>Valor (€)</span>
+            <input name="valor" className="entrada" inputMode="decimal" required placeholder="0,00" />
+          </label>
+          <label className="campo">
+            <span>Descrição (aparece ao cliente e na fatura)</span>
+            <input name="descricao" className="entrada" required minLength={3} maxLength={200}
+                   placeholder="Ex.: Declaração de substituição" />
+          </label>
+          <div>
+            <button type="submit" className="btn" disabled={aCorrer}>{aCorrer ? 'A criar…' : 'Pedir pagamento'}</button>
+          </div>
+        </form>
+      </section>
+
       <TestesCegid processo={processo} />
     </>
+  );
+}
+
+function RepetirNota({ reembolso, aCorrer, executar, temOrigem }: {
+  reembolso: Reembolso; aCorrer: boolean; temOrigem: boolean;
+  executar: (f: () => Promise<{ ok: boolean; erro?: string; aviso?: string }>) => void;
+}) {
+  const [origem, setOrigem] = useState('');
+  return (
+    <span className={e.repetirNota}>
+      <span className={e.sub} title={reembolso.cegid_erro || undefined}>Nota de crédito por criar</span>
+      {!temOrigem && (
+        <input className="entrada" value={origem} onChange={(ev) => setOrigem(ev.target.value)} placeholder="FR 2026/12" aria-label="Fatura-recibo de origem" />
+      )}
+      <button type="button" className="btn-texto" disabled={aCorrer || (!temOrigem && !origem.trim())}
+              onClick={() => executar(() => repetirNotaCredito(reembolso.id, origem))}>
+        Criar nota de crédito
+      </button>
+    </span>
   );
 }
