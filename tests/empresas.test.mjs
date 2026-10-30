@@ -53,12 +53,12 @@ test('portal Clientes Empresa',async t=>{
    assert.equal((await db.query("update public.companies set data_corte='2030-01-01' where id=$1 returning id",[empresa])).rows.length,0);
    await actor(ids.staff);
    await assert.rejects(db.query("select public.definir_data_corte($1,current_date+10)",[empresa]),/futura/);
-   await db.exec('reset role');await db.query("insert into public.empresa_cegid_cache(company_id,chave,dados) values($1,'x','{}')",[empresa]);
    await actor(ids.staff);
    await db.query("select public.definir_data_corte($1,'2026-09-30','Setembro fechado')",[empresa]);
    assert.equal((await one('select data_corte::text as d from public.companies where id=$1',[empresa])).d,'2026-09-30');
-   await db.exec('reset role');
-   assert.equal((await one('select count(*)::int as n from public.empresa_cegid_cache where company_id=$1',[empresa])).n,0);
+   // A data de corte muda a versão do Cegid: a cache do portal deixa de servir.
+   assert.equal((await one('select cegid_versao from public.companies where id=$1',[empresa])).cegid_versao,1);
+   assert.equal((await one('select public.renovar_cegid_empresa($1) as v',[empresa])).v,2);
    await actor(ids.a);
    assert.equal((await one('select count(*)::int as n from public.empresa_cortes')).n,1);
    const r=(await one('select public.empresa_resumo($1) as r',[empresa])).r;
@@ -129,11 +129,124 @@ test('portal Clientes Empresa',async t=>{
    await assert.rejects(db.query('select public.gestao_empresas()'),/Not authorized/);
   });
 
+  await t.test('start date, blocked and closed months limit what the client can send',async()=>{
+   await actor(ids.a);
+   await assert.rejects(db.query("select public.definir_inicio_empresa($1,'2026-01-01')",[empresa]),/contabilista/);
+   await assert.rejects(db.query('select public.definir_mes_empresa($1,public.mes_lisboa(),true,false)',[empresa]),/contabilista/);
+   await actor(ids.staff);
+   await db.query("select public.definir_inicio_empresa($1,(public.mes_lisboa()-interval '1 month')::date)",[empresa]);
+   await db.query("select public.definir_mes_empresa($1,(public.mes_lisboa()-interval '1 month')::date,true,false)",[empresa]);
+   await db.query("select public.definir_mes_empresa($1,public.mes_lisboa(),false,true)",[empresa]);
+   await actor(ids.a);
+   const tentar=intervalo=>db.query(`select public.preparar_documento_empresa($1,(public.mes_lisboa()-interval '${intervalo}')::date,'compras','x.pdf','application/pdf',10)`,[empresa]);
+   await assert.rejects(tentar('2 months'),/anterior ao início/);
+   await assert.rejects(tentar('1 month'),/fechado para envio/);
+   await assert.rejects(tentar('0 months'),/fechado para envio/);
+   await assert.rejects(db.query('select public.marcar_mes_completo($1,public.mes_lisboa(),true)',[empresa]),/fechado pelo contabilista/);
+   const r=(await one('select public.empresa_resumo($1) as r',[empresa])).r;
+   assert.equal(r.meses.length,2);assert.ok(r.meses[0].fechado_em);assert.equal(r.meses[1].bloqueado,true);
+   await actor(ids.staff);
+   await db.query("select public.definir_mes_empresa($1,public.mes_lisboa(),false,false)",[empresa]);
+   await db.query("select public.definir_inicio_empresa($1,null)",[empresa]);
+  });
+
+  await t.test('both sides edit the company file, every change is kept, NIF is checked',async()=>{
+   await actor(ids.a);
+   await assert.rejects(db.query("select public.guardar_ficha_empresa($1,'{\"nif\":\"500000001\"}')",[empresa]),/NIF inválido/);
+   await assert.rejects(db.query("select public.guardar_ficha_empresa($1,'{\"nif\":\"500000001\"}')",[outra]),/Sem acesso/);
+   await assert.rejects(db.query("select public.guardar_ficha_empresa($1,'{\"saldo\":\"1\"}')",[empresa]),/Campo desconhecido/);
+   const n=(await one("select public.guardar_ficha_empresa($1,$2::jsonb) as n",[empresa,JSON.stringify({regime_iva:'trimestral',cae:'69200',iban:'pt50 0002 0123 1234 5678 9015 4',tem_trabalhadores:true,capital_social:'5000'})])).n;
+   assert.equal(n,5);
+   assert.equal((await one('select iban from public.empresa_fichas where company_id=$1',[empresa])).iban,'PT50000201231234567890154');
+   await actor(ids.staff);
+   assert.equal((await one("select public.guardar_ficha_empresa($1,$2::jsonb) as n",[empresa,JSON.stringify({nif:'123456789',capital_social:'5000.00'})])).n,1);
+   await actor(ids.a);
+   const h=(await db.query('select campo,antes,depois,origem from public.empresa_ficha_historico order by id')).rows;
+   assert.deepEqual(h.map(x=>x.campo),['cae','regime_iva','tem_trabalhadores','capital_social','iban','nif']);
+   assert.deepEqual(h.map(x=>x.origem),['portal','portal','portal','portal','portal','gestao']);
+   assert.deepEqual([h[5].antes,h[5].depois],['500000000','123456789']);
+   await actor(ids.b);
+   assert.equal((await one('select count(*)::int as n from public.empresa_ficha_historico')).n,0);
+  });
+
+  await t.test('alerts reach only their companies and are read per person',async()=>{
+   await actor(ids.staff);
+   await db.query("insert into public.empresa_alertas(company_id,titulo,nivel,criado_por) values($1,'Só A','urgente',$3),($2,'Só B','info',$3),(null,'Todos','aviso',$3)",[empresa,outra,ids.staff]);
+   await actor(ids.a);
+   const vistos=(await db.query('select id,titulo from public.empresa_alertas order by titulo')).rows;
+   assert.deepEqual(vistos.map(x=>x.titulo),['Só A','Todos']);
+   await assert.rejects(db.query("insert into public.empresa_alertas(company_id,titulo,criado_por) values($1,'falso',$2)",[empresa,ids.a]));
+   await db.query('select public.ler_alerta_empresa($1)',[vistos[0].id]);
+   assert.equal((await one('select count(*)::int as n from public.empresa_alertas_lidos')).n,1);
+   const deB=(await one("select id from public.empresa_alertas where titulo='Só B'"));
+   assert.equal(deB,undefined);
+  });
+
+  await t.test('personnel requests, monthly payslips and taxes with guides and proofs',async()=>{
+   await actor(ids.b);
+   await assert.rejects(db.query("select public.comunicar_pessoal($1,'admissao','Alguém','{}')",[outra]),/não tem trabalhadores/);
+   await actor(ids.a);
+   const pedido=(await one("select public.comunicar_pessoal($1,'admissao','Joana Silva',$2::jsonb) as id",[empresa,JSON.stringify({nif:'123456789',inicio:'2026-11-01'})])).id;
+   const anexo=(await one("select public.preparar_ficheiro_empresa($1,'pessoal',$2,'cc.pdf','application/pdf',100) as f",[empresa,pedido])).f;
+   await db.query("insert into storage.objects(bucket_id,name) values('empresas-ficheiros',$1)",[anexo.caminho]);
+   await db.query('select public.concluir_ficheiro_empresa($1)',[anexo.id]);
+   await assert.rejects(db.query("select public.tratar_pessoal($1,'tratado')",[pedido]),/contabilista/);
+   await assert.rejects(db.query("select public.preparar_recibos_mes($1,public.mes_lisboa())",[empresa]),/contabilista/);
+   await actor(ids.b);
+   assert.equal((await one('select count(*)::int as n from public.empresa_pessoal')).n,0);
+   assert.equal((await one("select count(*)::int as n from storage.objects where bucket_id='empresas-ficheiros'")).n,0);
+   await actor(ids.staff);
+   await db.query("select public.tratar_pessoal($1,'tratado','Admissão comunicada à Segurança Social')",[pedido]);
+   const recibos=(await one('select public.preparar_recibos_mes($1,public.mes_lisboa()) as id',[empresa])).id;
+   const pdf=(await one("select public.preparar_ficheiro_empresa($1,'recibos',$2,'recibos.pdf','application/pdf',100) as f",[empresa,recibos])).f;
+   await actor(ids.a);
+   assert.equal((await one('select count(*)::int as n from public.empresa_recibos')).n,0); // por publicar
+   await actor(ids.staff);
+   await db.query("insert into storage.objects(bucket_id,name) values('empresas-ficheiros',$1)",[pdf.caminho]);
+   await db.query('select public.concluir_ficheiro_empresa($1)',[pdf.id]);
+   const iva=(await one("select public.guardar_imposto(null,$1,'IVA','2026-09','IVA de setembro','DUC 123',1234.56,current_date-1) as id",[empresa])).id;
+   const guia=(await one("select public.preparar_ficheiro_empresa($1,'guia',$2,'guia.pdf','application/pdf',100) as f",[empresa,iva])).f;
+   await db.query("insert into storage.objects(bucket_id,name) values('empresas-ficheiros',$1)",[guia.caminho]);
+   await db.query('select public.concluir_ficheiro_empresa($1)',[guia.id]);
+   await actor(ids.a);
+   assert.equal((await one('select count(*)::int as n from public.empresa_recibos where publicado_em is not null')).n,1);
+   await db.query('select public.registar_descarga_empresa($1)',[pdf.id]);
+   assert.ok((await one('select descarregado_em from public.empresa_recibos')).descarregado_em);
+   await assert.rejects(db.query("select public.preparar_ficheiro_empresa($1,'guia',$2,'x.pdf','application/pdf',1)",[empresa,iva]),/Apenas o contabilista/);
+   await assert.rejects(db.query("select public.guardar_imposto(null,$1,'IVA','x',null,null,1,current_date)",[empresa]),/Apenas o contabilista/);
+   const r=(await one('select public.empresa_resumo($1) as r',[empresa])).r;
+   assert.equal(r.impostos.length,1);assert.equal(r.impostos[0].atrasado,true);
+   const prova=(await one("select public.preparar_ficheiro_empresa($1,'comprovativo',$2,'pago.pdf','application/pdf',100) as f",[empresa,iva])).f;
+   await db.query("insert into storage.objects(bucket_id,name) values('empresas-ficheiros',$1)",[prova.caminho]);
+   await db.query('select public.concluir_ficheiro_empresa($1)',[prova.id]);
+   assert.equal((await one('select estado from public.empresa_impostos where id=$1',[iva])).estado,'pago');
+   await db.query('select public.marcar_imposto_pago($1,false)',[iva]);
+   await actor(ids.b);
+   await assert.rejects(db.query('select public.marcar_imposto_pago($1,true)',[iva]),/indisponível/);
+   assert.equal((await one('select count(*)::int as n from public.empresa_impostos')).n,0);
+   await actor(ids.staff);
+   assert.equal((await one('select public.gestao_empresas() as g')).g.empresas.find(e=>e.id===empresa).impostos_atrasados,1);
+  });
+
+  await t.test('the logo lives under the company folder and only its people can change it',async()=>{
+   const nome=`${empresa}/logotipo-1700000000.webp`;
+   await actor(ids.b);
+   await assert.rejects(db.query("insert into storage.objects(bucket_id,name) values('empresas-logotipos',$1)",[nome]));
+   await actor(ids.a);
+   await assert.rejects(db.query("insert into storage.objects(bucket_id,name) values('empresas-logotipos',$1)",[`${empresa}/outro.webp`]));
+   await assert.rejects(db.query('select public.definir_logotipo_empresa($1,$2)',[empresa,nome]),/Logótipo inválido/);
+   await db.query("insert into storage.objects(bucket_id,name) values('empresas-logotipos',$1)",[nome]);
+   assert.equal((await one('select public.definir_logotipo_empresa($1,$2) as a',[empresa,nome])).a,null);
+   assert.equal((await one('select public.portal_empresas() as p')).p.empresas[0].logotipo,nome);
+   await assert.rejects(db.query('select public.definir_logotipo_empresa($1,$2)',[outra,nome]),/Sem acesso/);
+  });
+
   await t.test('the activity log and the Cegid cache are written only by the server',async()=>{
    await actor(ids.a);
    await assert.rejects(db.query("select public.registar_empresa($1,'login','x')",[empresa]),/permission denied/);
    await assert.rejects(db.query("insert into public.empresa_atividade(company_id,tipo) values($1,'falso')",[empresa]));
-   await assert.rejects(db.query('select * from public.empresa_cegid_cache'));
+   assert.equal((await one("select to_regclass('public.empresa_cegid_cache') as t")).t,null);
+   await assert.rejects(db.query('select public.renovar_cegid_empresa($1)',[empresa]),/Not authorized/);
    await db.exec('reset role');await db.exec('set role anon');
    await assert.rejects(db.query('select public.portal_empresas()'),/permission denied/);
    await db.exec('reset role');

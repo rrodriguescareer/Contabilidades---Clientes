@@ -29,6 +29,14 @@ export type CofreEmpresa = {
 
 const ambito = (empresa: string) => `cegid:${empresa}`;
 
+/** O portal guarda o que lê do Cegid numa cache com a versão da empresa na
+    chave. Subir a versão é deitar essa cache fora. */
+async function subirVersao(empresa: string) {
+  const admin = adminClient();
+  const { data } = await admin.from('companies').select('cegid_versao').eq('id', empresa).maybeSingle();
+  await admin.from('companies').update({ cegid_versao: Number(data?.cegid_versao ?? 0) + 1 }).eq('id', empresa);
+}
+
 /** Grava (ou substitui) as credenciais de uma empresa. Os tokens antigos
     deixam de servir e são esquecidos. */
 export async function gravarCredenciaisEmpresa(empresa: string, dados: Pick<CofreEmpresa, 'identificador' | 'segredo' | 'oauth_url' | 'api_url'>) {
@@ -44,12 +52,12 @@ export async function gravarCredenciaisEmpresa(empresa: string, dados: Pick<Cofr
     updated_at: new Date().toISOString(),
   });
   if (error) throw error;
-  await adminClient().from('empresa_cegid_cache').delete().eq('company_id', empresa);
+  await subirVersao(empresa);
 }
 
 export async function apagarCredenciaisEmpresa(empresa: string) {
   await adminClient().from('integration_secrets').delete().eq('scope', ambito(empresa));
-  await adminClient().from('empresa_cegid_cache').delete().eq('company_id', empresa);
+  await subirVersao(empresa);
 }
 
 /** O que está guardado, sem segredos: para a gestão mostrar o estado. */

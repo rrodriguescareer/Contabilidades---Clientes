@@ -1,12 +1,14 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { configuration } from './lib/public-config';
+import { opcoesDosCookies, partilharCookiesDeSessao } from './lib/cookies-partilhados';
 export async function proxy(request: NextRequest) {
   const config=configuration();
   let response = NextResponse.next({ request });
   if (!config) return response;
   const {url,key}=config;
-  const client = createServerClient(url, key, { cookies: {
+  const cookieOptions = opcoesDosCookies(request.headers.get('host'));
+  const client = createServerClient(url, key, { ...(cookieOptions ? { cookieOptions } : {}), cookies: {
     getAll: () => request.cookies.getAll(),
     setAll: values => {
       values.forEach(({name,value}) => request.cookies.set(name,value));
@@ -31,6 +33,7 @@ export async function proxy(request: NextRequest) {
   }
 
   response.headers.set('Cache-Control','private, no-store');
-  return response;
+  // Por último: reescreve a sessão para o domínio partilhado (irs., portal., gestao.).
+  return partilharCookiesDeSessao(request, response);
 }
 export const config = { matcher: ['/app/:path*','/irs','/irs/:path*','/relatorio/:path*','/nova-password','/utilizadores','/empresas','/empresas/:path*','/descontos','/pagamentos','/configuracao','/faturacao','/precos','/avisos'] };

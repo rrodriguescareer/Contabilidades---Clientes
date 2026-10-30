@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Empresas' };
 
 type Ligacao = { user_id: string; active: boolean; profile: { email: string } | null };
-type Estado = { id: string; data_corte: string | null; tem_cegid: boolean; documentos: number; por_ver: number; atrasados: number; completo: boolean | null; mensagens: number };
+type Estado = { id: string; data_corte: string | null; tem_cegid: boolean; documentos: number; por_ver: number; atrasados: number; completo: boolean | null; mensagens: number; pessoal: number; impostos_atrasados: number };
 type Portal = { mes_em_curso: string; prazo: string; empresas: Estado[] };
 
 const data = (iso: string | null) => (iso ? iso.slice(0, 10).split('-').reverse().join('/') : null);
@@ -90,6 +90,8 @@ export default async function Empresas({ searchParams }: { searchParams: Promise
                             {x.por_ver > 0 && <span className="etiqueta etiqueta-acao">{x.por_ver} por ver</span>}
                             {x.atrasados > 0 && <span className="etiqueta etiqueta-critico">{x.atrasados} fora do prazo</span>}
                             {x.mensagens > 0 && <span className="etiqueta etiqueta-acao">{x.mensagens} {x.mensagens === 1 ? 'mensagem' : 'mensagens'}</span>}
+                            {x.pessoal > 0 && <span className="etiqueta etiqueta-acao">{x.pessoal} de pessoal</span>}
+                            {x.impostos_atrasados > 0 && <span className="etiqueta etiqueta-critico">{x.impostos_atrasados} imposto(s) em atraso</span>}
                           </>
                         );
                       })()}
@@ -146,7 +148,7 @@ export default async function Empresas({ searchParams }: { searchParams: Promise
                           );
                         })()}
                         <Link className="btn btn-sm" href={`/empresas/${empresa.id}`}>
-                          Data de corte, Cegid e documentos
+                          Abrir a empresa: definições, ficha, documentos, impostos, pessoal
                         </Link>
                       </div>
                     </div>

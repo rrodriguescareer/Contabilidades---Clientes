@@ -81,8 +81,8 @@ export async function reverDocumento(form: FormData) {
   const { error } = await client.rpc('rever_documento_empresa', {
     documento: texto(form, 'documento'), novo_estado: estado, resposta: texto(form, 'resposta') || null,
   });
-  if (error) voltar(id, 'erro', 'Não foi possível atualizar o documento.', `&mes=${mes}`);
-  voltar(id, 'mensagem', estado === 'devolvido' ? 'Documento devolvido ao cliente.' : estado === 'visto' ? 'Documento marcado como visto.' : 'Documento reposto como recebido.', `&mes=${mes}`);
+  if (error) voltar(id, 'erro', 'Não foi possível atualizar o documento.', `&aba=documentos&mes=${mes}`);
+  voltar(id, 'mensagem', estado === 'devolvido' ? 'Documento devolvido ao cliente.' : estado === 'visto' ? 'Documento marcado como visto.' : 'Documento reposto como recebido.', `&aba=documentos&mes=${mes}`);
 }
 
 export async function marcarTodosVistos(form: FormData) {
@@ -90,7 +90,7 @@ export async function marcarTodosVistos(form: FormData) {
   const mes = texto(form, 'mes');
   const { data } = await client.from('empresa_documentos').select('id').eq('company_id', id).eq('mes', `${mes}-01`).eq('estado', 'recebido');
   for (const d of data ?? []) await client.rpc('rever_documento_empresa', { documento: d.id, novo_estado: 'visto', resposta: null });
-  voltar(id, 'mensagem', `${data?.length ?? 0} documentos marcados como vistos.`, `&mes=${mes}`);
+  voltar(id, 'mensagem', `${data?.length ?? 0} documentos marcados como vistos.`, `&aba=documentos&mes=${mes}`);
 }
 
 export async function conferirMes(form: FormData) {
@@ -98,16 +98,16 @@ export async function conferirMes(form: FormData) {
   const mes = texto(form, 'mes');
   const conferido = texto(form, 'conferido') === 'true';
   const { error } = await client.rpc('conferir_mes_empresa', { empresa: id, mes: `${mes}-01`, conferido, nota: texto(form, 'nota') || null });
-  if (error) voltar(id, 'erro', 'Não foi possível guardar a conferência.', `&mes=${mes}`);
-  voltar(id, 'mensagem', conferido ? 'Mês conferido. O cliente vê-o no portal.' : 'Conferência anulada.', `&mes=${mes}`);
+  if (error) voltar(id, 'erro', 'Não foi possível guardar a conferência.', `&aba=documentos&mes=${mes}`);
+  voltar(id, 'mensagem', conferido ? 'Mês conferido. O cliente vê-o no portal.' : 'Conferência anulada.', `&aba=documentos&mes=${mes}`);
 }
 
 export async function responderMensagem(form: FormData) {
   const { client, id } = await empresaDoForm(form);
   const corpo = String(form.get('corpo') || '').trim();
-  if (!corpo || corpo.length > 5000) voltar(id, 'erro', 'Escreva a resposta (até 5000 caracteres).', '#mensagens');
+  if (!corpo || corpo.length > 5000) voltar(id, 'erro', 'Escreva a resposta (até 5000 caracteres).', '&aba=mensagens');
   const { data: mensagem, error } = await client.rpc('enviar_mensagem_empresa', { empresa: id, corpo });
-  if (error || !mensagem) voltar(id, 'erro', 'Não foi possível enviar a resposta.', '#mensagens');
+  if (error || !mensagem) voltar(id, 'erro', 'Não foi possível enviar a resposta.', '&aba=mensagens');
   await client.rpc('ler_mensagens_empresa', { empresa: id });
 
   // Avisa por email as pessoas com acesso à empresa.
@@ -124,7 +124,7 @@ export async function responderMensagem(form: FormData) {
       botao: { texto: 'Abrir as mensagens', url: `${PORTAL}/app/${id}/mensagens` },
     });
   }
-  voltar(id, 'mensagem', 'Resposta enviada.', '#mensagens');
+  voltar(id, 'mensagem', 'Resposta enviada.', '&aba=mensagens');
 }
 
 export async function criarPrazo(form: FormData) {
@@ -132,19 +132,19 @@ export async function criarPrazo(form: FormData) {
   const titulo = texto(form, 'titulo').slice(0, 200);
   const data = texto(form, 'data');
   const todas = form.get('todas') === 'on';
-  if (!titulo || !/^\d{4}-\d{2}-\d{2}$/.test(data)) voltar(id, 'erro', 'Indique o título e a data do prazo.', '#prazos');
+  if (!titulo || !/^\d{4}-\d{2}-\d{2}$/.test(data)) voltar(id, 'erro', 'Indique o título e a data do prazo.', '&aba=mensagens');
   const { error } = await client.from('empresa_prazos').insert({
     company_id: todas ? null : id, titulo, data, descricao: texto(form, 'descricao').slice(0, 1000) || null, criado_por: user.id,
   });
-  if (error) voltar(id, 'erro', 'Não foi possível criar o prazo.', '#prazos');
-  voltar(id, 'mensagem', todas ? 'Prazo criado para todas as empresas.' : 'Prazo criado.', '#prazos');
+  if (error) voltar(id, 'erro', 'Não foi possível criar o prazo.', '&aba=mensagens');
+  voltar(id, 'mensagem', todas ? 'Prazo criado para todas as empresas.' : 'Prazo criado.', '&aba=mensagens');
 }
 
 export async function apagarPrazo(form: FormData) {
   const { client, id } = await empresaDoForm(form);
   const prazo = texto(form, 'prazo');
-  if (!uuid(prazo)) voltar(id, 'erro', 'Prazo inválido.', '#prazos');
+  if (!uuid(prazo)) voltar(id, 'erro', 'Prazo inválido.', '&aba=mensagens');
   const { error } = await client.from('empresa_prazos').delete().eq('id', prazo);
-  if (error) voltar(id, 'erro', 'Não foi possível apagar o prazo.', '#prazos');
-  voltar(id, 'mensagem', 'Prazo apagado.', '#prazos');
+  if (error) voltar(id, 'erro', 'Não foi possível apagar o prazo.', '&aba=mensagens');
+  voltar(id, 'mensagem', 'Prazo apagado.', '&aba=mensagens');
 }
