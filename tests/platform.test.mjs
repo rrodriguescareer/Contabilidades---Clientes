@@ -13,7 +13,7 @@ test('production registration, administration, quotations, checkout and private 
   create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
   grant usage on schema auth,storage to authenticated;grant execute on function auth.uid() to authenticated;
   create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
-  create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text references storage.buckets(id),name text not null);
+  create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text references storage.buckets(id),name text not null,metadata jsonb);
   alter table storage.objects enable row level security;grant select,insert on storage.objects to authenticated;`);
   await db.exec(await readFile(new URL('../supabase/install.sql',import.meta.url),'utf8'));
   for(const [name,id]of Object.entries(ids))await db.query('insert into auth.users(id,email,email_confirmed_at,raw_user_meta_data) values($1,$2,$3,$4)',[id,name==='staff'?'contabilidade.rubenrodrigues@gmail.com':name+'@example.com',name==='unconfirmed'?null:new Date(),JSON.stringify({terms_accepted:true,terms_version:'2026-10-28.1',privacy_version:'2026-10-28.1'})]);
@@ -243,11 +243,15 @@ test('production registration, administration, quotations, checkout and private 
    const doc=(await db.query("select public.prepare_irs_document($1,$2,null,'PPR','ppr.webp','image/webp',10,$3) as data",[a,c,'34'.repeat(32)])).rows[0].data;
    const concluir=()=>db.query("select public.concluir_documento($1,'deduction',null,'Comprovativo do PPR')",[doc.id]);
    await assert.rejects(concluir(),/File not received/);
-   await db.query("insert into storage.objects(bucket_id,name) values('irs-documents',$1)",[doc.path]);
+   // O browser carrega diretamente para o Storage: um ficheiro de outro tipo não conta.
+   const troca=(await db.query("select public.prepare_irs_document($1,$2,null,'PPR','x.pdf','application/pdf',10,$3) as data",[a,c,'56'.repeat(32)])).rows[0].data;
+   await db.query(`insert into storage.objects(bucket_id,name,metadata) values('irs-documents',$1,'{"size":10,"mimetype":"text/html"}')`,[troca.path]);
+   await assert.rejects(db.query("select public.concluir_documento($1,'deduction',null,'Outro')",[troca.id]),/File does not match/);
+   await db.query(`insert into storage.objects(bucket_id,name,metadata) values('irs-documents',$1,'{"size":4321,"mimetype":"image/webp"}')`,[doc.path]);
    await actor(ids.b);await assert.rejects(concluir());
    await actor(ids.a);await concluir();await concluir();
-   const row=(await db.query('select state,category,description from public.documents where id=$1',[doc.id])).rows[0];
-   assert.deepEqual({...row},{state:'uploaded',category:'deduction',description:'Comprovativo do PPR'});
+   const row=(await db.query('select state,category,description,file_size from public.documents where id=$1',[doc.id])).rows[0];
+   assert.deepEqual({...row,file_size:Number(row.file_size)},{state:'uploaded',category:'deduction',description:'Comprovativo do PPR',file_size:4321});
    // A senha guardada pelo gabinete aparece ao cliente como guardada.
    const membros=(await db.query("select public.espaco_irs('agregado',$1) as d",[c])).rows[0].d.membros;
    assert.equal(membros.find((m)=>m.relacao==='titular').tem_senha,true);
