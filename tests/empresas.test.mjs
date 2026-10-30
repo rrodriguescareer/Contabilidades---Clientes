@@ -14,9 +14,20 @@ test('portal Clientes Empresa',async t=>{
   create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
   grant usage on schema auth,storage to authenticated;grant execute on function auth.uid() to authenticated;
   create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
-  create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text references storage.buckets(id),name text not null);
+  create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text references storage.buckets(id),name text not null,metadata jsonb);
   alter table storage.objects enable row level security;grant select,insert,delete on storage.objects to authenticated;`);
   await db.exec(await readFile(new URL('../supabase/install.sql',import.meta.url),'utf8'));
+  // O Storage grava o tipo e o tamanho do que recebe; aqui, o browser envia o anunciado.
+  await db.exec(`create function storage.simular_metadata() returns trigger language plpgsql security definer set search_path='' as $f$
+  begin
+    if new.metadata is null then
+      select jsonb_build_object('size', x.tamanho, 'mimetype', x.mime) into new.metadata from (
+        select d.tamanho, d.mime, d.caminho from public.empresa_documentos d union all
+        select f.tamanho, f.mime, f.caminho from public.empresa_ficheiros f) x where x.caminho = new.name limit 1;
+    end if;
+    return new;
+  end $f$;
+  create trigger simular_metadata before insert on storage.objects for each row execute function storage.simular_metadata();`);
   for(const [name,id]of Object.entries(ids))await db.query('insert into auth.users(id,email) values($1,$2)',[id,name==='staff'?'contabilidade.rubenrodrigues@gmail.com':name+'@example.com']);
   await db.query('insert into public.staff_users(user_id) values($1) on conflict do nothing',[ids.staff]);
   const actor=async id=>{await db.exec('reset role');await db.query("select set_config('request.jwt.claim.sub',$1,false)",[id]);await db.exec('set role authenticated');};
@@ -86,6 +97,17 @@ test('portal Clientes Empresa',async t=>{
    const velho=(await one("select public.preparar_documento_empresa($1,(public.mes_lisboa()-interval '2 months')::date,'vendas','v.jpg','image/webp',500) as d",[empresa])).d;
    await db.query("insert into storage.objects(bucket_id,name) values('empresas-documentos',$1)",[velho.caminho]);
    assert.equal((await one('select public.concluir_documento_empresa($1) as r',[velho.id])).r.atrasado,true);
+   // O ficheiro vai do browser para o Storage: a conclusão confirma lá o tipo e o tamanho reais.
+   const troca=(await one("select public.preparar_documento_empresa($1,public.mes_lisboa(),'compras','f.pdf','application/pdf',100) as d",[empresa])).d;
+   await db.query(`insert into storage.objects(bucket_id,name,metadata) values('empresas-documentos',$1,'{"size":100,"mimetype":"text/html"}')`,[troca.caminho]);
+   await assert.rejects(db.query('select public.concluir_documento_empresa($1)',[troca.id]),/não corresponde/);
+   const real=(await one("select public.preparar_documento_empresa($1,public.mes_lisboa(),'compras','g.pdf','application/pdf',100) as d",[empresa])).d;
+   await db.query(`insert into storage.objects(bucket_id,name,metadata) values('empresas-documentos',$1,'{"size":2345,"mimetype":"application/pdf"}')`,[real.caminho]);
+   await db.query('select public.concluir_documento_empresa($1)',[real.id]);
+   assert.equal(Number((await one('select tamanho from public.empresa_documentos where id=$1',[real.id])).tamanho),2345);
+   await db.query("delete from storage.objects where name = any($1)",[[troca.caminho,real.caminho]]);
+   await db.query('select public.eliminar_documento_empresa($1)',[troca.id]);
+   await db.query('select public.eliminar_documento_empresa($1)',[real.id]);
    await actor(ids.b);
    assert.equal((await one('select count(*)::int as n from public.empresa_documentos')).n,0);
    assert.equal((await one("select count(*)::int as n from storage.objects where bucket_id='empresas-documentos'")).n,0);

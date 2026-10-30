@@ -3,8 +3,9 @@ import { CAMPOS, rotuloDoCampo, valorLegivel } from '@/lib/empresa-ficha';
 import { ESTADOS_PESSOAL, rotuloPessoal, TIPOS_PESSOAL } from '@/lib/empresa-pessoal';
 import {
   apagarImpostoGestao, enviarLogotipoGestao, guardarFichaGestao, guardarImpostoGestao, marcarImpostoGestao,
-  publicarRecibos, tratarPessoalGestao,
+  tratarPessoalGestao,
 } from '@/lib/empresas-gestao-actions';
+import { PublicarRecibos } from './publicar-recibos';
 import { data, dataHora, euros, mesesRecentes, nomeMes, type Contexto } from './comum';
 import c from '../empresas.module.css';
 
@@ -126,17 +127,7 @@ export async function AbaPessoal({ client, id }: Contexto) {
         </section>
         <section className={c.caixa}>
           <h3>Recibos de vencimento · um PDF por mês</h3>
-          <form action={publicarRecibos} className="pilha pilha-3">
-            <input type="hidden" name="empresa" value={id} />
-            <div className={c.campos}>
-              <label className="campo"><span>Mês</span>
-                <select name="mes" className="entrada" required>{mesesRecentes(6).map((m) => <option key={m} value={m}>{nomeMes(m)}</option>)}</select>
-              </label>
-              <label className="campo"><span>PDF com os recibos</span><input type="file" name="ficheiro" accept="application/pdf" required /></label>
-            </div>
-            <small className="pequeno suave">Publicar de novo o mesmo mês substitui o ficheiro anterior. O cliente recebe um email.</small>
-            <div className={c.acoes}><Submeter className="btn btn-sm" aDecorrer="A publicar…">Publicar recibos</Submeter></div>
-          </form>
+          <PublicarRecibos empresa={id} meses={mesesRecentes(6).map((m) => ({ valor: m, nome: nomeMes(m) }))} />
           {recibos?.length ? (
             <ul className={c.lista}>
               {recibos.map((r) => (

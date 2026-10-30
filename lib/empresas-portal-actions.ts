@@ -82,7 +82,32 @@ export async function reverDocumento(form: FormData) {
     documento: texto(form, 'documento'), novo_estado: estado, resposta: texto(form, 'resposta') || null,
   });
   if (error) voltar(id, 'erro', 'Não foi possível atualizar o documento.', `&aba=documentos&mes=${mes}`);
-  voltar(id, 'mensagem', estado === 'devolvido' ? 'Documento devolvido ao cliente.' : estado === 'visto' ? 'Documento marcado como visto.' : 'Documento reposto como recebido.', `&aba=documentos&mes=${mes}`);
+  if (estado === 'devolvido') {
+    // Quem enviou precisa de saber que tem de corrigir: avisa as pessoas da empresa.
+    const documento = texto(form, 'documento');
+    const [{ data: doc }, { data: empresa }] = await Promise.all([
+      client.from('empresa_documentos').select('nome,mes').eq('id', documento).maybeSingle(),
+      client.from('companies').select('name,company_users(active,profile:profiles(email))').eq('id', id).maybeSingle(),
+    ]);
+    type Ligacao = { active: boolean; profile: { email: string } | null };
+    const resposta = texto(form, 'resposta');
+    const mesDoc = String(doc?.mes ?? `${mes}-01`).slice(0, 7);
+    for (const l of ((empresa?.company_users ?? []) as unknown as Ligacao[]).filter((x) => x.active && x.profile?.email)) {
+      await enviarEmail({
+        chave: `empresa-devolvido:${documento}:${l.profile!.email}`,
+        para: l.profile!.email,
+        assunto: `Documento devolvido — ${empresa?.name ?? 'a sua empresa'}`,
+        titulo: 'Um documento precisa de correção.',
+        paragrafos: [
+          `O contabilista devolveu o documento «${doc?.nome ?? 'enviado'}»${empresa?.name ? ` da empresa ${empresa.name}` : ''}.`,
+          resposta ? `Motivo: ${resposta}` : 'Abra o portal para ver o que falta.',
+          'Envie a versão corrigida no mesmo mês, em Documentos do mês.',
+        ],
+        botao: { texto: 'Enviar a correção', url: `${PORTAL}/app/${id}/documentos?mes=${mesDoc}` },
+      });
+    }
+  }
+  voltar(id, 'mensagem', estado === 'devolvido' ? 'Documento devolvido ao cliente e avisado por email.' : estado === 'visto' ? 'Documento marcado como visto.' : 'Documento reposto como recebido.', `&aba=documentos&mes=${mes}`);
 }
 
 export async function marcarTodosVistos(form: FormData) {

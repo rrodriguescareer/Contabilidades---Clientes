@@ -164,21 +164,66 @@ export async function tratarPessoalGestao(form: FormData) {
   voltar(id, 'pessoal', 'mensagem', 'Pedido atualizado.');
 }
 
-export async function publicarRecibos(form: FormData) {
-  const { client, id } = await empresaDoForm(form);
-  const mes = texto(form, 'mes');
-  const f = form.get('ficheiro');
-  if (!/^\d{4}-\d{2}$/.test(mes) || !(f instanceof File) || !f.size) voltar(id, 'pessoal', 'erro', 'Escolha o mês e o PDF dos recibos.');
-  const { data: ref, error } = await client.rpc('preparar_recibos_mes', { empresa: id, p_mes: `${mes}-01` });
-  if (error || !ref) voltar(id, 'pessoal', 'erro', 'Não foi possível preparar os recibos.');
-  const { data: antigos } = await client.from('empresa_ficheiros').select('id,caminho').eq('ref_id', ref).eq('contexto', 'recibos');
-  const r = await carregar(client, id, 'recibos', ref, f);
-  if ('erro' in r) voltar(id, 'pessoal', 'erro', r.erro!);
+/* Os recibos vão do browser diretamente para o Storage: um PDF com os
+   recibos de todos os trabalhadores passa facilmente dos 4,5 MB que o Vercel
+   aceita num pedido. Aqui só se regista o envio e se conclui. */
+
+export async function prepararRecibos(empresa: string, mes: string, ficheiro: { nome: string; mime: string; tamanho: number }):
+  Promise<{ erro: string } | { ref: string; id: string; url: string }> {
+  const { client } = await ownerSession();
+  if (!uuid(empresa) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(mes)) return { erro: 'Escolha o mês dos recibos.' };
+  if (ficheiro?.mime !== 'application/pdf' || !Number.isInteger(ficheiro.tamanho) || ficheiro.tamanho < 1 || ficheiro.tamanho > 10 * 1024 * 1024) {
+    return { erro: 'Os recibos têm de ser um PDF até 10 MB.' };
+  }
+  const { data: ref, error } = await client.rpc('preparar_recibos_mes', { empresa, p_mes: `${mes}-01` });
+  if (error || !ref) return { erro: 'Não foi possível preparar os recibos.' };
+  const nome = String(ficheiro.nome || '').replace(/[\u0000-\u001f]/g, '').trim().slice(0, 200) || `recibos-${mes}.pdf`;
+  const { data: p, error: semRegisto } = await client.rpc('preparar_ficheiro_empresa', {
+    empresa, p_contexto: 'recibos', p_ref: ref, p_nome: nome, p_mime: 'application/pdf', p_tamanho: ficheiro.tamanho,
+  });
+  if (semRegisto || !p?.caminho) return { erro: 'Não foi possível registar o ficheiro.' };
+  const { data: s } = await client.storage.from(BUCKET).createSignedUploadUrl(p.caminho);
+  if (!s?.signedUrl) {
+    await client.rpc('apagar_ficheiro_empresa', { ficheiro: p.id });
+    return { erro: 'Não foi possível preparar o envio.' };
+  }
+  return { ref, id: p.id, url: s.signedUrl };
+}
+
+export async function concluirRecibos(empresa: string, mes: string, ref: string, id: string, falhou = false): Promise<{ ok?: string; erro?: string }> {
+  const { client } = await ownerSession();
+  if (!uuid(empresa) || !uuid(ref) || !uuid(id) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(mes)) return { erro: 'Pedido inválido.' };
+  const { data: f } = await client.from('empresa_ficheiros').select('id,caminho,estado').eq('id', id).eq('ref_id', ref).eq('company_id', empresa).maybeSingle();
+  if (!f) return { erro: 'Envio desconhecido.' };
+  if (falhou) {
+    await apagarFicheiros(client, [f]);
+    return { erro: 'O envio foi interrompido. Tente novamente.' };
+  }
+  if (f.estado === 'pendente' && !(await ePdf(client, f.caminho))) {
+    await apagarFicheiros(client, [f]);
+    return { erro: 'O ficheiro não chegou ou não é um PDF.' };
+  }
+  const { error } = await client.rpc('concluir_ficheiro_empresa', { ficheiro: id });
+  if (error) return { erro: 'O ficheiro não ficou concluído.' };
   // Um ficheiro por mês: o novo substitui o anterior.
-  await apagarFicheiros(client, (antigos ?? []).filter((x) => x.id !== r.id));
-  await avisarClientes(client, id, `empresa-recibos:${ref}:${r.id}`, `Recibos de vencimento de ${nomeMes(mes)}`,
+  const { data: antigos } = await client.from('empresa_ficheiros').select('id,caminho').eq('ref_id', ref).eq('contexto', 'recibos').neq('id', id);
+  await apagarFicheiros(client, antigos ?? []);
+  await avisarClientes(client, empresa, `empresa-recibos:${ref}:${id}`, `Recibos de vencimento de ${nomeMes(mes)}`,
     `Os recibos de ${nomeMes(mes)} estão disponíveis.`, ['Pode descarregá-los no portal, na secção Pessoal.'], '/pessoal');
-  voltar(id, 'pessoal', 'mensagem', `Recibos de ${nomeMes(mes)} publicados e cliente avisado.`);
+  revalidatePath(`/empresas/${empresa}`);
+  return { ok: `Recibos de ${nomeMes(mes)} publicados e cliente avisado.` };
+}
+
+/** Confirma pelos primeiros bytes que o que chegou ao Storage é um PDF. */
+async function ePdf(client: SupabaseClient, caminho: string) {
+  const { data } = await client.storage.from(BUCKET).createSignedUrl(caminho, 60);
+  if (!data?.signedUrl) return false;
+  const r = await fetch(data.signedUrl, { headers: { Range: 'bytes=0-15' }, cache: 'no-store' }).catch(() => null);
+  if (!r?.ok || !r.body) return false;
+  const leitor = r.body.getReader();
+  const { value } = await leitor.read();
+  void leitor.cancel().catch(() => {});
+  return Boolean(value) && tipoReal(value!) === 'application/pdf';
 }
 
 /* ------------------------------------------------------------ impostos */
