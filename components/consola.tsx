@@ -14,7 +14,7 @@ export async function Lateral({ email, administrador }: { email: string; adminis
   const contagens = await contagensDoGabinete().catch(() => ({}));
   return (
     <aside className={e.lateral}>
-      <Link href="/irs" className={e.marca}>
+      <Link prefetch={false} href="/irs" className={e.marca}>
         <img src="/rr.svg" alt="RR." width={259} height={142} />
         <span className={e.modo}>Gabinete</span>
       </Link>

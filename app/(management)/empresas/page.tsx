@@ -147,7 +147,7 @@ export default async function Empresas({ searchParams }: { searchParams: Promise
                             </p>
                           );
                         })()}
-                        <Link className="btn btn-sm" href={`/empresas/${empresa.id}`}>
+                        <Link prefetch={false} className="btn btn-sm" href={`/empresas/${empresa.id}`}>
                           Abrir a empresa: definições, ficha, documentos, impostos, pessoal
                         </Link>
                       </div>

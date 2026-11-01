@@ -112,7 +112,7 @@ export async function AbaDocumentos({ client, id, mes, meses, empresa }: Context
     <>
       <nav className={c.meses} aria-label="Mês">
         {meses.map((x) => (
-          <Link key={x} className={c.mes} aria-current={x === mes} href={`/empresas/${id}?aba=documentos&mes=${x}`}
+          <Link prefetch={false} key={x} className={c.mes} aria-current={x === mes} href={`/empresas/${id}?aba=documentos&mes=${x}`}
                 style={inicio && x < inicio ? { opacity: .45 } : undefined}>{nomeMes(x)}</Link>
         ))}
       </nav>

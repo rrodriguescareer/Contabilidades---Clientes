@@ -114,7 +114,7 @@ export default async function Precos({ searchParams }: { searchParams: Promise<{
                           <Submeter className="btn btn-secundario btn-sm" aDecorrer="…">Repor em vigor</Submeter>
                         </form>
                       )}
-                      <Link className="btn btn-discreto btn-sm" href={`/precos?base=${p.id}#editor`}>Editar a partir desta</Link>
+                      <Link prefetch={false} className="btn btn-discreto btn-sm" href={`/precos?base=${p.id}#editor`}>Editar a partir desta</Link>
                     </div>
                   </details>
                 );

@@ -48,7 +48,7 @@ export default async function VisaoGeral({ searchParams }: { searchParams: Promi
             return destino
               ? destino.startsWith('http')
                 ? <a key={rotulo} className={e.indicador} href={destino}>{conteudo}</a>
-                : <Link key={rotulo} className={e.indicador} href={destino}>{conteudo}</Link>
+                : <Link prefetch={false} key={rotulo} className={e.indicador} href={destino}>{conteudo}</Link>
               : <div key={rotulo} className={e.indicador}>{conteudo}</div>;
           })}
         </div>
@@ -58,7 +58,7 @@ export default async function VisaoGeral({ searchParams }: { searchParams: Promi
         <Secao titulo="Módulos" nota="Tudo o que administra fica aqui dentro.">
           <div className={e.modulos}>
             {MODULOS.map((m) => (
-              <Link className={e.modulo} href={m.href} key={m.href}>
+              <Link prefetch={false} className={e.modulo} href={m.href} key={m.href}>
                 <Icone nome={m.icone} />
                 <strong>{m.titulo}</strong>
                 <span>{m.nota}</span>

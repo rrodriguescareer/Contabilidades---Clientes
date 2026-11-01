@@ -54,13 +54,13 @@ export default async function Empresa({ params, searchParams }: {
           <p>NIF {empresa.nif} · {ligacoes.filter((l) => l.active).map((l) => l.profile?.email).filter(Boolean).join(', ') || 'sem utilizadores ativos'}</p>
         </div>
         <div className={c.acoes}>
-          <Link className="btn btn-secundario btn-sm" href="/empresas">Todas as empresas</Link>
+          <Link prefetch={false} className="btn btn-secundario btn-sm" href="/empresas">Todas as empresas</Link>
           <a className="btn btn-sm" href={`${PORTAL}/app/${id}`} target="_blank" rel="noopener">Ver no portal</a>
         </div>
       </div>
       <nav className={c.abas} aria-label="Secções da empresa">
         {ABAS.map(([k, nome]) => (
-          <Link key={k} className={c.aba} aria-current={k === aba} href={`/empresas/${id}?aba=${k}`}>
+          <Link prefetch={false} key={k} className={c.aba} aria-current={k === aba} href={`/empresas/${id}?aba=${k}`}>
             {nome}{contagem[k] ? <span>{contagem[k]}</span> : null}
           </Link>
         ))}

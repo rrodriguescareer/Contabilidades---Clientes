@@ -82,7 +82,7 @@ export default async function Utilizadores({
             <ul className="lista-simples">
               {parados.map((x) => (
                 <li key={x.id}>
-                  <Link href={`/utilizadores?q=${encodeURIComponent(x.email)}`}>{x.nome || x.email}</Link>
+                  <Link prefetch={false} href={`/utilizadores?q=${encodeURIComponent(x.email)}`}>{x.nome || x.email}</Link>
                   {' '}· {x.email} · validado há {x.dias} dias ({formatarData(x.confirmado_em)})
                 </li>
               ))}
@@ -316,12 +316,12 @@ export default async function Utilizadores({
         {(pagina > 0 || (pagina + 1) * POR_PAGINA < total) && (
           <div className="linha">
             {pagina > 0 && (
-              <Link className="btn btn-secundario btn-sm" href={ligacao(pagina - 1)}>
+              <Link prefetch={false} className="btn btn-secundario btn-sm" href={ligacao(pagina - 1)}>
                 ← Anterior
               </Link>
             )}
             {(pagina + 1) * POR_PAGINA < total && (
-              <Link className="btn btn-secundario btn-sm" href={ligacao(pagina + 1)}>
+              <Link prefetch={false} className="btn btn-secundario btn-sm" href={ligacao(pagina + 1)}>
                 Seguinte →
               </Link>
             )}

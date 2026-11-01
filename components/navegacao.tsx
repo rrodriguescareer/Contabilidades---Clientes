@@ -66,7 +66,7 @@ export function Navegacao({ contagens = {} }: { contagens?: Record<string, numbe
           {g.itens.map((m) => {
             const n = m.contagem ? contagens[m.contagem] : 0;
             return (
-              <Link key={m.href} href={m.href} className={e.navLink}
+              <Link prefetch={false} key={m.href} href={m.href} className={e.navLink}
                     aria-current={atual(m.href) ? 'page' : undefined}>
                 <Icone nome={m.icone} />
                 <span className={e.navNome}>{m.nome}</span>
