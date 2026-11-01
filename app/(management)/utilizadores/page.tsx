@@ -35,12 +35,15 @@ export default async function Utilizadores({
     .range(pagina * POR_PAGINA, pagina * POR_PAGINA + POR_PAGINA - 1);
   if (procura) consulta = consulta.ilike(procura.includes('@') ? 'email' : 'full_name', `%${literal}%`);
 
-  const [{ data: utilizadores, count, error }, { data: descontos }, { data: equipa }, { data: acessos }] = await Promise.all([
+  const [{ data: utilizadores, count, error }, { data: descontos }, { data: equipa }, { data: acessos }, { data: semPagamento }] = await Promise.all([
     consulta,
     client.from('discount_codes').select('id,code,active').order('code'),
     client.from('staff_users').select('user_id,active,managed_by'),
     client.from('account_access').select('user_id,account_id,irs,business,active').eq('role', 'owner'),
+    client.rpc('sem_pagamento', { dias: 7 }),
   ]);
+  type SemPagamento = { id: string; email: string; nome: string | null; confirmado_em: string; dias: number };
+  const parados = (semPagamento ?? []) as SemPagamento[];
 
   const ids = utilizadores?.map((perfil) => perfil.id) ?? [];
   const [{ data: convites }, { data: resumos }] = ids.length
@@ -66,6 +69,25 @@ export default async function Utilizadores({
   return (
     <>
       <Avisos erro={parametros.erro} mensagem={parametros.mensagem} />
+
+      {parados.length > 0 && (
+        <Secao titulo="Registados sem pagamento" nota="Email validado há mais de 7 dias e ainda sem nenhum pagamento.">
+          <div className="cartao pilha pilha-3" role="alert" style={{ borderInlineStart: '4px solid var(--atencao)' }}>
+            <p className="pequeno">
+              {parados.length === 1 ? 'Um cliente validou a conta' : `${parados.length} clientes validaram a conta`} há mais
+              de uma semana e ainda não pagou. Pode valer a pena um contacto, ou eliminar as contas que não avançam.
+            </p>
+            <ul className="lista-simples">
+              {parados.map((x) => (
+                <li key={x.id}>
+                  <Link href={`/utilizadores?q=${encodeURIComponent(x.email)}`}>{x.nome || x.email}</Link>
+                  {' '}· {x.email} · validado há {x.dias} dias ({formatarData(x.confirmado_em)})
+                </li>
+              ))}
+            </ul>
+          </div>
+        </Secao>
+      )}
 
       <Secao titulo="Criar acesso por convite" nota="O convite cria a conta; as empresas associam-se depois.">
         <form action={inviteManagedUser} className="cartao pilha pilha-4">
@@ -223,13 +245,15 @@ export default async function Utilizadores({
 
                       </div>
                     )}
-                    {perfil.id !== user.id && !contabilista && (
+                    {perfil.id !== user.id && (
                       <div className={`${e.fichaCaixa} ${e.perigo}`}>
                         <h3>{perfil.deleted_at ? 'Eliminar definitivamente' : 'Eliminar utilizador'}</h3>
                         <p className="pequeno">
                           {perfil.deleted_at
                             ? 'Esta conta foi eliminada pelo método antigo, que só anonimizava o perfil: os dados continuam na base. Isto apaga-os de vez.'
-                            : 'Apaga a conta e tudo o que está nela — confirmada ou não — e os ficheiros enviados. Não se pode desfazer. A ficha no Cegid mantém-se.'}
+                            : contabilista
+                              ? 'Apaga a conta deste contabilista da equipa: perde o acesso à gestão e a conta sai por completo. Não se pode desfazer.'
+                              : 'Apaga a conta e tudo o que está nela — validada ou não — e os ficheiros enviados. Não se pode desfazer. A ficha no Cegid mantém-se.'}
                         </p>
                         {resumo && (
                           <p className="pequeno">

@@ -9,6 +9,7 @@ import type { FaturaCegid } from '@/lib/cegid';
 import { emRecolha, posicao, estadoDe, type Prontidao } from '@/lib/fluxo';
 import { AMBITOS, DEDUCOES, SEPARADORES, pertence } from './separadores';
 import { Avanco } from './avanco';
+import { Desistencia } from './desistencia';
 import { TestesCegid } from './integracoes';
 import { Pilula } from './pilula';
 import { PAGAMENTOS } from './estados';
@@ -96,6 +97,7 @@ export function Processo({ dados, processo, abaInicial, aoMudar }:
 
   return (
     <div className={e.processo}>
+      <Desistencia processo={processo} aoMudar={aoMudar} />
       <section className={`${e.cartao} ${e.cabecalho}`}>
         <div className={e.identidade}>
           <span className={e.avatarGrande}>

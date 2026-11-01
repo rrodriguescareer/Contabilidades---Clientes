@@ -36,7 +36,7 @@ export async function signUp(form: FormData) {
   if (failure) error('Não foi possível concluir o registo. Verifique os dados ou tente recuperar o acesso.','/registar');
   redirect('/entrar?mensagem=Confirme%20o%20email%20para%20continuar.%20O%20acesso%20ao%20IRS%20será%20aprovado%20pelo%20profissional.');
 }
-export async function signOut() { const client=await supabase();await client.auth.signOut();redirect('/entrar'); }
+export async function signOut() { const client=await supabase();await client.auth.signOut({ scope: 'local' });redirect('/entrar'); }
 export async function recover(form: FormData) {
   if(process.env.AUTH_EMAIL_BRANDING_READY!=='true')error('A recuperação por email está temporariamente indisponível. Contacte o responsável.','/recuperar');
   const origin=siteUrl();if (!origin) error('Falta configurar o endereço público da aplicação.','/recuperar');

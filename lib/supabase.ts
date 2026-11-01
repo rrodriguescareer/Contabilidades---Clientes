@@ -1,7 +1,7 @@
 import 'server-only';
 import {cache} from 'react';
 import { createServerClient } from '@supabase/ssr';
-import { cookies, headers } from 'next/headers';
+import { cookies } from 'next/headers';
 import { opcoesDosCookies } from './cookies-partilhados';
 
 import { configuration } from './public-config';
@@ -10,10 +10,9 @@ export const supabase=cache(async function supabase() {
   const config = configuration();
   if (!config) throw new Error('Configuração Supabase em falta.');
   const store = await cookies();
-  // Em produção, a sessão é do domínio .rr-contabilidade.com: a mesma nas três plataformas.
-  const cookieOptions = opcoesDosCookies((await headers()).get('host'));
+  // A sessão da gestão tem um cookie próprio: não se mistura com a dos portais.
   return createServerClient(config.url, config.key, {
-    ...(cookieOptions ? { cookieOptions } : {}),
+    cookieOptions: opcoesDosCookies(),
     global:{fetch:async(input,init)=>{
       const started=performance.now();
       try{return await fetch(input,init);}finally{

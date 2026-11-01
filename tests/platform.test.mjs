@@ -268,6 +268,27 @@ test('production registration, administration, quotations, checkout and private 
    await actor(ids.b);assert.equal((await db.query('select * from public.documents where account_id=$1',[a])).rows.length,0);
    await assert.rejects(db.query("select public.prepare_irs_document($1,$2,null,'Other','file.pdf','application/pdf',10,$3)",[a,c,hash]));
   });
+  await t.test('a withdrawal request is made by the holder, once, and decided by the accountant',async()=>{
+   const c=await newCase();
+   await actor(ids.b);await assert.rejects(db.query("select public.pedir_desistencia($1,'x')",[c]),/Not authorized/);
+   await actor(ids.a);
+   const r=(await db.query("select public.pedir_desistencia($1,'Mudei de ideias') as r",[c])).rows[0].r;
+   assert.equal(r.dentro_do_prazo,true);
+   await assert.rejects(db.query('select public.pedir_desistencia($1,null)',[c]),/pendente/);
+   assert.equal((await db.query('select public.novidades_irs($1) as n',[c])).rows[0].n.desistencia,'pendente');
+   await assert.rejects(db.query('select public.tratar_desistencia($1,true,null)',[r.id]),/Not authorized/);
+   await actor(ids.staff);
+   assert.equal((await db.query('select public.contagens_do_gabinete() as c')).rows[0].c.desistencias,1);
+   await db.query("select public.tratar_desistencia($1,true,'Encerrado e reembolsado.')",[r.id]);
+   assert.equal((await db.query('select status from public.irs_cases where id=$1',[c])).rows[0].status,'closed');
+   assert.equal((await db.query('select public.contagens_do_gabinete() as c')).rows[0].c.desistencias,0);
+   await actor(ids.a);
+   await assert.rejects(db.query('select public.pedir_desistencia($1,null)',[c]),/concluído/);
+   // As novidades contam o que veio do gabinete desde a última visita.
+   assert.ok((await db.query('select public.novidades_irs($1) as n',[c])).rows[0].n.progresso>=1);
+   await db.query('select public.marcar_visto($1)',['irs:progresso:'+c]);
+   assert.equal((await db.query('select public.novidades_irs($1) as n',[c])).rows[0].n.progresso,0);
+  });
   await t.test('blocking revokes reads with an existing session; deleting authentication preserves fiscal originals',async()=>{
    await actor(ids.staff);await db.query('select public.set_user_blocked($1,true)',[ids.a]);
    await actor(ids.a);assert.equal((await db.query('select * from public.client_accounts')).rows.length,0);assert.equal((await db.query('select * from public.documents')).rows.length,0);assert.equal((await db.query('select * from public.companies')).rows.length,0);

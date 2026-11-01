@@ -15,7 +15,7 @@ const GRUPOS: { titulo: string; itens: Item[] }[] = [
     itens: [
       { href: '/irs', nome: 'Processos', icone: 'pasta', contagem: 'a_rever' },
       { href: '/irs?separador=mensagens', nome: 'Mensagens', icone: 'balao', contagem: 'por_responder' },
-      { href: '/irs?separador=pagamentos', nome: 'Pagamentos', icone: 'cartao' },
+      { href: '/irs?separador=pagamentos', nome: 'Pagamentos', icone: 'cartao', contagem: 'pagamentos' },
       { href: '/irs?separador=alertas', nome: 'Alertas', icone: 'sino', contagem: 'alertas' },
     ],
   },
@@ -23,8 +23,8 @@ const GRUPOS: { titulo: string; itens: Item[] }[] = [
     titulo: 'Clientes',
     itens: [
       { href: '/app', nome: 'Visão geral', icone: 'grelha' },
-      { href: '/utilizadores', nome: 'Utilizadores e acessos', icone: 'pessoas' },
-      { href: '/empresas', nome: 'Empresas', icone: 'predio' },
+      { href: '/utilizadores', nome: 'Utilizadores e acessos', icone: 'pessoas', contagem: 'sem_pagamento' },
+      { href: '/empresas', nome: 'Empresas', icone: 'predio', contagem: 'empresas' },
     ],
   },
   {

@@ -24,6 +24,7 @@ type Resposta = {
 /** Uma vista da consola, num pedido só. */
 export async function carregarGabinete(vista: string, processo: string | null) {
   const { client } = await session();
+  if (vista === 'pagamentos') await client.rpc('marcar_visto', { p_area: 'gestao:pagamentos' });
   const { data, error } = await client.rpc('espaco_gabinete', { vista, processo });
   if (error) return { dados: null, erro: error.message };
   return { dados: (data || { vista }) as Record<string, unknown> & { vista: string }, erro: null };
@@ -473,4 +474,42 @@ export async function faturasParaReembolso(checkout: string): Promise<
     || r.dados.find((f) => f.totalCents === k.amount_cents)?.id
     || r.dados[0]?.id || null;
   return { ok: true, faturas: r.dados, sugerida };
+}
+
+/* ------------------------------------------------------------ desistência */
+
+export type PedidoDesistencia = {
+  id: string; estado: string; motivo: string | null; dentro_do_prazo: boolean; contratado_em: string; criado_em: string;
+};
+
+/** O pedido de desistência ainda por decidir neste processo, se houver. */
+export async function desistenciaDoProcesso(processo: string): Promise<PedidoDesistencia | null> {
+  const { client } = await session();
+  const { data } = await client.from('pedidos_desistencia')
+    .select('id,estado,motivo,dentro_do_prazo,contratado_em,criado_em').eq('case_id', processo).eq('estado', 'pendente').maybeSingle();
+  return (data as PedidoDesistencia) || null;
+}
+
+/** Aceitar fecha o processo; recusar deixa-o seguir. O cliente é avisado por
+    email da decisão. O reembolso, se houver, faz-se no separador Pagamento. */
+export async function decidirDesistencia(pedido: string, aceite: boolean, resposta: string, processo: string): Promise<Resposta> {
+  const { client } = await session();
+  const { error } = await client.rpc('tratar_desistencia', { pedido, p_aceite: aceite, p_resposta: resposta.slice(0, 2000) || null });
+  if (error) return { ok: false, erro: /tratado/.test(error.message) ? 'Este pedido já foi decidido.' : 'Não foi possível guardar a decisão.' };
+  const alvo = await titularDoProcesso(processo);
+  if (alvo?.perfil?.email) {
+    const ola = `Olá${primeiroNome(alvo.nome) ? `, ${primeiroNome(alvo.nome)}` : ''}.`;
+    await enviarEmail({
+      chave: `desistencia-decidida:${pedido}`, para: alvo.perfil.email,
+      assunto: aceite ? 'O seu pedido de desistência foi aceite' : 'Resposta ao seu pedido de desistência',
+      titulo: aceite ? 'Desistência aceite' : 'Pedido de desistência não aceite',
+      paragrafos: [ola,
+        aceite ? 'O seu pedido de desistência do serviço de preparação do IRS foi aceite e o processo foi encerrado.'
+               : 'O seu pedido de desistência foi analisado e o processo continua.',
+        ...(resposta.trim() ? [`Nota do contabilista: ${resposta.trim()}`] : [])],
+      botao: { texto: 'Abrir o portal', url: `${PORTAL}/app?separador=progresso` },
+      conta: alvo.conta, processo,
+    });
+  }
+  return { ok: true };
 }
