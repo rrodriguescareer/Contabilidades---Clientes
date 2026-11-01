@@ -9,7 +9,7 @@ test('production registration, administration, quotations, checkout and private 
  const db=new PGlite();
  try{
   await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create schema storage;
-  create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz,raw_user_meta_data jsonb not null default '{}',deleted_at timestamptz,created_at timestamptz not null default now(),last_sign_in_at timestamptz);
+  create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz,raw_user_meta_data jsonb not null default '{}',deleted_at timestamptz,created_at timestamptz not null default now(),last_sign_in_at timestamptz);create table auth.mfa_factors(id uuid primary key default gen_random_uuid(),user_id uuid,status text,factor_type text);
   create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
   grant usage on schema auth,storage to authenticated;grant execute on function auth.uid() to authenticated;
   create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
@@ -288,6 +288,60 @@ test('production registration, administration, quotations, checkout and private 
    assert.ok((await db.query('select public.novidades_irs($1) as n',[c])).rows[0].n.progresso>=1);
    await db.query('select public.marcar_visto($1)',['irs:progresso:'+c]);
    assert.equal((await db.query('select public.novidades_irs($1) as n',[c])).rows[0].n.progresso,0);
+  });
+  await t.test('with a verified second factor, only a session that passed it reaches the data',async()=>{
+   await db.exec('reset role');
+   await db.query("insert into auth.mfa_factors(user_id,status,factor_type) values($1,'verified','totp')",[ids.a]);
+   await actor(ids.a);
+   const claims=(aal)=>db.query("select set_config('request.jwt.claims',$1,false)",[JSON.stringify({sub:ids.a,aal})]);
+   await claims('aal1');
+   assert.equal((await db.query('select count(*)::int as n from public.irs_cases')).rows[0].n,0);
+   assert.equal((await db.query('select public.get_portal_context() as c')).rows[0].c.aal_em_falta,true);
+   await claims('aal2');
+   assert.ok((await db.query('select count(*)::int as n from public.irs_cases')).rows[0].n>0);
+   assert.equal((await db.query('select public.get_portal_context() as c')).rows[0].c.aal_em_falta,false);
+   await db.exec('reset role');await db.query('delete from auth.mfa_factors where user_id=$1',[ids.a]);
+   await db.query("select set_config('request.jwt.claims','',false)");
+  });
+  await t.test('pricing rules: conditions, exclusions, per-unit, limits, versions and restoring an old one',async()=>{
+   await actor(ids.staff);
+   const preco=async(regras,m,min=null,max=null)=>(await db.query('select public.simular_preco($1,$2,$3,$4) as r',[JSON.stringify(regras),JSON.stringify(m),min,max])).rows[0].r;
+   const regras=[
+    {id:'base',ordem:1,rotulo:'Base',valor_cents:2000,condicoes:[]},
+    {id:'a',ordem:2,rotulo:'Trabalho',valor_cents:500,condicoes:[{tipo:'categoria',modo:'alguma',categorias:['employment']}],anula:['b']},
+    {id:'b',ordem:3,rotulo:'Pensões',valor_cents:700,condicoes:[{tipo:'categoria',modo:'alguma',categorias:['pension']}]},
+    {id:'casa',ordem:4,rotulo:'Imóveis vendidos: {n}',valor_cents:1000,por_unidade:{medida:'imoveis_venda',acima_de:1},condicoes:[]},
+    {id:'off',ordem:5,rotulo:'Desligada',valor_cents:999,ativa:false,condicoes:[]},
+   ];
+   let r=await preco(regras,{categorias:['employment','pension'],imoveis_venda:3});
+   assert.deepEqual(r.items.map(i=>i.code),['base','a','casa']);   // «a» anula «b»; «off» está desligada
+   assert.equal(r.items.find(i=>i.code==='casa').amount_cents,2000); // 3 imóveis, os 2 acima do primeiro
+   assert.equal(r.items.find(i=>i.code==='casa').label,'Imóveis vendidos: 3');
+   assert.equal(r.subtotal_cents,4500);
+   r=await preco(regras,{categorias:['pension'],imoveis_venda:1});
+   assert.deepEqual(r.items.map(i=>i.code),['base','b']);
+   r=await preco(regras,{categorias:['pension']},5000);
+   assert.equal(r.subtotal_cents,5000);assert.equal(r.items.at(-1).code,'minimo');
+   assert.match((await preco([{id:'x',rotulo:'X',valor_cents:1,anula:['y']}],{})).erro,/não existe/);
+   assert.match((await preco([{id:'X!',rotulo:'X',valor_cents:1}],{})).erro,/código simples/);
+   // Versões: criar não ativa; ativar troca e fica no histórico; uma antiga volta a vigorar.
+   const v1=(await db.query("select public.criar_politica_precos('Tabela 1',$1) as id",[JSON.stringify(regras)])).rows[0].id;
+   const v2=(await db.query("select public.criar_politica_precos('Tabela 2',$1,null,3000,null,$2) as id",[JSON.stringify(regras.slice(0,1)),v1])).rows[0].id;
+   await db.query('select public.ativar_politica_precos($1)',[v1]);
+   await db.query('select public.ativar_politica_precos($1)',[v2]);
+   await db.query('select public.ativar_politica_precos($1)',[v1]);
+   await db.exec('reset role');
+   assert.equal((await db.query('select id from public.pricing_policies where activa')).rows[0].id,v1);
+   assert.equal((await db.query('select count(*)::int as n from public.pricing_historico')).rows[0].n,3);
+   assert.equal((await db.query('select count(*)::int as n from public.pricing_historico where desativada_em is null')).rows[0].n,1);
+   // O preço de um processo usa a política em vigor.
+   const c=await newCase();await income(c,'employment');
+   assert.equal((await quote(c)).subtotal_cents,2500);
+   await actor(ids.staff);await db.query('select public.ativar_politica_precos($1)',[v2]);
+   await actor(ids.a);assert.equal((await quote(c)).subtotal_cents,3000); // base 2000, mínimo 3000
+   // Clientes não criam políticas.
+   await assert.rejects(db.query("select public.criar_politica_precos('X',$1)",[JSON.stringify(regras)]),/Not authorized/);
+   await actor(ids.staff);await db.exec('reset role');await db.query('update public.pricing_policies set activa=false');await db.query('delete from public.pricing_historico');
   });
   await t.test('blocking revokes reads with an existing session; deleting authentication preserves fiscal originals',async()=>{
    await actor(ids.staff);await db.query('select public.set_user_blocked($1,true)',[ids.a]);

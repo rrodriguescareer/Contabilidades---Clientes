@@ -128,3 +128,31 @@ export async function setModuleAccess(form:FormData){
  if(error)finish('/utilizadores','Não foi possível alterar os acessos.',true);
  finish('/utilizadores','Acessos atualizados. As empresas associam-se no módulo Empresas.');
 }
+
+/* Desativar a autenticação de dois fatores de um utilizador (perdeu o
+   telemóvel, por exemplo). Pede a palavra-passe de quem está na gestão,
+   confirmada numa ligação à parte que não mexe na sessão aberta. O cliente é
+   avisado por email. */
+export async function disableTwoFactor(form:FormData){
+ const {user}=await session();const target=text(form,'user'),password=String(form.get('password')||'');
+ if(!uuid(target)||!password||!adminConfigured())finish('/utilizadores','Indique a sua palavra-passe para confirmar.',true);
+ const {createClient}=await import('@supabase/supabase-js');const {configuration}=await import('./public-config');
+ const config=configuration();if(!config)finish('/utilizadores','Serviço indisponível.',true);
+ const verificar=createClient(config.url,config.key,{auth:{persistSession:false,autoRefreshToken:false}});
+ const {data:prova,error:errada}=await verificar.auth.signInWithPassword({email:user.email,password});
+ if(errada||prova.user?.id!==user.id)finish('/utilizadores','Palavra-passe errada. Nada foi alterado.',true);
+ await verificar.auth.signOut({scope:'local'});
+ const admin=adminClient();
+ const {data:fatores}=await admin.auth.admin.mfa.listFactors({userId:target});
+ for(const f of fatores?.factors??[])await admin.auth.admin.mfa.deleteFactor({id:f.id,userId:target});
+ await admin.from('management_audit').insert({actor_id:user.id,target_id:target,action:'dois_fatores_desativado'});
+ const {data:alvo}=await admin.from('profiles').select('email,full_name').eq('id',target).maybeSingle();
+ if(alvo?.email){
+  const {enviarEmail}=await import('./email');
+  await enviarEmail({chave:`2fa-desativada-gestao:${target}:${Date.now()}`,para:alvo.email,
+   assunto:'Autenticação de dois fatores desativada',titulo:'A autenticação de dois fatores foi desativada',
+   paragrafos:['O contabilista desativou a autenticação de dois fatores da sua conta, a seu pedido. A conta volta a entrar só com o email e a palavra-passe.',
+    'Pode voltar a ativá-la em «A minha conta». Se não pediu isto, contacte o contabilista de imediato.']}).catch(()=>false);
+ }
+ finish('/utilizadores','Autenticação de dois fatores desativada. O utilizador foi avisado por email.');
+}

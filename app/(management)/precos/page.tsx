@@ -1,8 +1,11 @@
+import Link from 'next/link';
 import { ownerSession as session } from '@/lib/auth';
 import { Avisos, Secao } from '@/components/consola';
 import { Submeter } from '@/components/forms';
-import { activarPolitica, alternarCampanha, guardarCampanha, guardarPolitica } from '@/lib/precos-actions';
+import { alternarCampanha, ativarPoliticaPrecos, guardarCampanha } from '@/lib/precos-actions';
+import { quando, quanto, type Regra } from '@/lib/precos-regras';
 import { data as formatarData } from '@/lib/apresentar';
+import { EditorPrecos } from './editor';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Preços e campanhas' };
@@ -10,36 +13,59 @@ export const metadata = { title: 'Preços e campanhas' };
 const EUROS = new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' });
 const euros = (c: number) => EUROS.format((c || 0) / 100);
 
-/* Os mesmos nomes que a função de preço usa, com a explicação do que cada um
-   faz — sem isso, daqui a um ano ninguém sabe o que é "b_adicional". */
-const CAMPOS: { id: string; rotulo: string; nota: string }[] = [
-  { id: 'base', rotulo: 'Base', nota: 'Primeiro tipo de rendimento. Está sempre.' },
-  { id: 'varios_titulares', rotulo: 'Vários titulares', nota: 'Mais do que uma pessoa com trabalho ou pensões.' },
-  { id: 'a_e_b', rotulo: 'Categorias A e B', nota: 'Trabalho dependente acumulado com independente.' },
-  { id: 'b_adicional', rotulo: 'B sobre pensões', nota: 'Independente acumulado com pensões.' },
-  { id: 'rendas_unica', rotulo: 'Rendas — único rendimento', nota: 'Até 2 imóveis, sem mais nada declarado.' },
-  { id: 'rendas_ate2', rotulo: 'Rendas — até 2 imóveis', nota: 'Com outros rendimentos.' },
-  { id: 'rendas_ate5', rotulo: 'Rendas — 3 a 5 imóveis', nota: '' },
-  { id: 'rendas_mais', rotulo: 'Rendas — 6 ou mais', nota: '' },
-  { id: 'mais_valias_titulos', rotulo: 'Mais-valias de títulos', nota: 'Ações e outros, categoria G.' },
-  { id: 'mais_valias_imovel', rotulo: 'Mais-valias por imóvel', nota: 'Multiplicado pelo número de imóveis vendidos.' },
-];
-
-type Politica = { id: string; nome: string; activa: boolean; valores: Record<string, number>; notas: string; criada_em: string };
+type Politica = {
+  id: string; nome: string; activa: boolean; valores: Record<string, number>; regras: Regra[] | null; notas: string | null;
+  minimo_cents: number | null; maximo_cents: number | null; origem: string | null; criada_em: string;
+};
+type Periodo = { policy_id: string; ativada_em: string; desativada_em: string | null };
 type Campanha = { id: string; nome: string; rotulo_publico: string; tipo: string; valor: number; activa: boolean; inicio: string | null; fim: string | null };
 
-export default async function Precos({ searchParams }: { searchParams: Promise<{ erro?: string; mensagem?: string }> }) {
+/** As regras de uma política, numa tabela que se lê: o que custa e quando. */
+function Regras({ regras, minimo, maximo }: { regras: Regra[]; minimo?: number | null; maximo?: number | null }) {
+  const nome = (id: string) => regras.find((r) => r.id === id)?.rotulo ?? id;
+  return (
+    <table className="tabela">
+      <thead><tr><th>Linha</th><th>Quando</th><th style={{ textAlign: 'right' }}>Valor</th></tr></thead>
+      <tbody>
+        {regras.map((r) => (
+          <tr key={r.id} style={{ opacity: r.ativa === false ? 0.5 : 1 }}>
+            <td><strong>{r.rotulo}</strong>{r.ativa === false && <span className="tenue micro"> · desligada</span>}
+              {r.anula?.length ? <><br /><span className="tenue micro">Anula: {r.anula.map(nome).join(', ')}</span></> : null}</td>
+            <td className="micro">{quando(r)}</td>
+            <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{quanto(r)}</td>
+          </tr>
+        ))}
+        {(minimo != null || maximo != null) && (
+          <tr><td colSpan={3} className="micro tenue">
+            {minimo != null ? `Mínimo ${euros(minimo)}` : ''}{minimo != null && maximo != null ? ' · ' : ''}{maximo != null ? `Máximo ${euros(maximo)}` : ''}
+          </td></tr>
+        )}
+      </tbody>
+    </table>
+  );
+}
+
+export default async function Precos({ searchParams }: { searchParams: Promise<{ erro?: string; mensagem?: string; base?: string }> }) {
   const { client } = await session();
   const parametros = await searchParams;
 
-  const [{ data: politicas }, { data: campanhas }, { data: vigor }] = await Promise.all([
-    client.from('pricing_policies').select('*').order('criada_em', { ascending: false }),
+  const [{ data: politicas }, { data: campanhas }, { data: vigor }, { data: historico }] = await Promise.all([
+    client.from('pricing_policies').select('id,nome,activa,valores,regras,notas,minimo_cents,maximo_cents,origem,criada_em').order('criada_em', { ascending: false }),
     client.from('campaigns').select('*').order('criada_em', { ascending: false }),
     client.rpc('precos_em_vigor'),
+    client.from('pricing_historico').select('policy_id,ativada_em,desativada_em').order('ativada_em', { ascending: false }),
   ]);
-
-  const emVigor = (vigor || {}) as Record<string, number>;
-  const activa = (politicas as Politica[] | null)?.find((p) => p.activa);
+  const lista = (politicas ?? []) as Politica[];
+  const periodos = (historico ?? []) as Periodo[];
+  // As regras de uma política antiga (só com valores) são as de sempre.
+  const { data: padrao } = await client.rpc('regras_padrao', { v: vigor || {} });
+  const regrasDe = async (p: Politica | undefined) =>
+    p?.regras ?? (p ? ((await client.rpc('regras_padrao', { v: p.valores || {} })).data as Regra[]) : (padrao as Regra[]));
+  const activa = lista.find((p) => p.activa);
+  const emVigor = await regrasDe(activa);
+  // O editor começa na política pedida (?base=), ou na que está em vigor.
+  const base = lista.find((p) => p.id === parametros.base) ?? activa;
+  const regrasBase = await regrasDe(base);
 
   return (
     <>
@@ -47,85 +73,55 @@ export default async function Precos({ searchParams }: { searchParams: Promise<{
 
       <Secao
         titulo="Preços em vigor"
-        nota={activa ? `Política «${activa.nome}».` : 'Sem política criada — valem os valores de origem.'}
+        nota={activa ? `Política «${activa.nome}», em vigor desde ${formatarData(periodos.find((x) => x.policy_id === activa.id)?.ativada_em ?? activa.criada_em)}.` : 'Sem política criada: valem as regras de origem.'}
       >
-        <div className="cartao">
-          <table className="tabela">
-            <tbody>
-              {CAMPOS.map((c) => (
-                <tr key={c.id}>
-                  <td>
-                    <strong>{c.rotulo}</strong>
-                    {c.nota && <><br /><span className="tenue micro">{c.nota}</span></>}
-                  </td>
-                  <td style={{ textAlign: 'right' }}>{euros(emVigor[c.id])}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="cartao"><Regras regras={emVigor} minimo={activa?.minimo_cents} maximo={activa?.maximo_cents} /></div>
+      </Secao>
+
+      <Secao
+        titulo={base ? `Nova versão a partir de «${base.nome}»` : 'Nova versão a partir das regras de origem'}
+        nota="Cada linha é uma regra: o valor, as condições em que se aplica (todas têm de se cumprir), se cobra por unidade e que outras linhas anula. Gravar cria uma versão nova; as anteriores ficam no histórico."
+      >
+        <div id="editor">
+          <EditorPrecos key={base?.id ?? 'origem'} inicial={regrasBase} origem={base?.id ?? null}
+                        nomeInicial={base ? `${base.nome} (revista)` : 'IRS — tabela base'} notasInicial=""
+                        minimoInicial={base?.minimo_cents ?? null} maximoInicial={base?.maximo_cents ?? null} />
         </div>
       </Secao>
 
-      <Secao titulo="Nova política" nota="Os preços são por rendimento declarado, com IVA incluído. Guardar não ativa: ativa-se à parte, para poder preparar a campanha seguinte com antecedência.">
-        <form action={guardarPolitica} className="cartao pilha pilha-4">
-          <label className="campo">
-            <span>Nome</span>
-            <input name="nome" className="entrada" required maxLength={120} placeholder="IRS 2026 — tabela base" />
-          </label>
-
-          <div className="grelha grelha-auto">
-            {CAMPOS.map((c) => (
-              <label className="campo" key={c.id}>
-                <span>{c.rotulo}</span>
-                <input name={c.id} type="number" className="entrada" min="0" step="0.01"
-                       defaultValue={((emVigor[c.id] || 0) / 100).toFixed(2)} required />
-                {c.nota && <span className="tenue micro">{c.nota}</span>}
-              </label>
-            ))}
-          </div>
-
-          <label className="campo">
-            <span>Notas internas</span>
-            <textarea name="notas" className="entrada" rows={2} maxLength={500} />
-          </label>
-
-          <label className="caixa">
-            <input type="checkbox" name="activar" />
-            <span className="pequeno">Pôr em vigor imediatamente</span>
-          </label>
-
-          <Submeter>Guardar política</Submeter>
-        </form>
-      </Secao>
-
-      <Secao titulo="Histórico de políticas" nota="A que está em vigor manda no preço de todos os orçamentos novos.">
+      <Secao titulo="Histórico de políticas" nota="Todas as versões ficam guardadas. Qualquer uma pode voltar a vigorar, ou servir de ponto de partida para outra.">
         <div className="cartao">
-          {(politicas as Politica[] | null)?.length ? (
-            <table className="tabela">
-              <thead>
-                <tr><th>Nome</th><th>Base</th><th>Criada</th><th>Estado</th><th /></tr>
-              </thead>
-              <tbody>
-                {(politicas as Politica[]).map((p) => (
-                  <tr key={p.id}>
-                    <td><strong>{p.nome}</strong>{p.notas && <><br /><span className="tenue micro">{p.notas}</span></>}</td>
-                    <td>{euros(p.valores?.base)}</td>
-                    <td>{formatarData(p.criada_em)}</td>
-                    <td>{p.activa ? <span className="etiqueta etiqueta-positivo">Em vigor</span> : <span className="etiqueta">Arquivada</span>}</td>
-                    <td>
+          {lista.length ? (
+            <div className="pilha pilha-3">
+              {lista.map((p) => {
+                const vezes = periodos.filter((x) => x.policy_id === p.id);
+                return (
+                  <details key={p.id} className="pilha pilha-2">
+                    <summary className="linha" style={{ cursor: 'pointer', flexWrap: 'wrap', gap: 'var(--e-3)' }}>
+                      <strong>{p.nome}</strong>
+                      {p.activa ? <span className="etiqueta etiqueta-positivo">Em vigor</span> : <span className="etiqueta">Arquivada</span>}
+                      <span className="micro tenue">Criada a {formatarData(p.criada_em)}{p.origem ? ` · a partir de «${lista.find((x) => x.id === p.origem)?.nome ?? 'outra'}»` : ''}</span>
+                    </summary>
+                    {p.notas && <p className="micro tenue">{p.notas}</p>}
+                    {vezes.length > 0 && (
+                      <p className="micro">Em vigor: {vezes.map((x) => `${formatarData(x.ativada_em)} — ${x.desativada_em ? formatarData(x.desativada_em) : 'hoje'}`).join(' · ')}</p>
+                    )}
+                    <Regras regras={p.regras ?? (padrao as Regra[])} minimo={p.minimo_cents} maximo={p.maximo_cents} />
+                    <div className="linha">
                       {!p.activa && (
-                        <form action={activarPolitica}>
+                        <form action={ativarPoliticaPrecos}>
                           <input type="hidden" name="id" value={p.id} />
-                          <Submeter className="btn btn-secundario">Pôr em vigor</Submeter>
+                          <Submeter className="btn btn-secundario btn-sm" aDecorrer="…">Repor em vigor</Submeter>
                         </form>
                       )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      <Link className="btn btn-discreto btn-sm" href={`/precos?base=${p.id}#editor`}>Editar a partir desta</Link>
+                    </div>
+                  </details>
+                );
+              })}
+            </div>
           ) : (
-            <p className="tenue">Ainda não criou nenhuma política.</p>
+            <p className="tenue">Ainda não há versões gravadas. A primeira que gravar começa nas regras de origem.</p>
           )}
         </div>
       </Secao>

@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { ownerSession as session } from '@/lib/auth';
 import { Avisos, Secao } from '@/components/consola';
 import { Submeter } from '@/components/forms';
-import { blockUser, deleteUser, setBilling, setAccountant, inviteManagedUser, setModuleAccess } from '@/lib/management-actions';
+import { blockUser, deleteUser, disableTwoFactor, setBilling, setAccountant, inviteManagedUser, setModuleAccess } from '@/lib/management-actions';
 import { adminConfigured } from '@/lib/admin-client';
 import { data as formatarData } from '@/lib/apresentar';
 import e from '@/components/consola.module.css';
@@ -46,12 +46,14 @@ export default async function Utilizadores({
   const parados = (semPagamento ?? []) as SemPagamento[];
 
   const ids = utilizadores?.map((perfil) => perfil.id) ?? [];
-  const [{ data: convites }, { data: resumos }] = ids.length
+  const [{ data: convites }, { data: resumos }, { data: comSegundoFator }] = ids.length
     ? await Promise.all([
         client.from('household_invitations').select('id,email,accepted_by,accepted_at').in('accepted_by', ids),
         client.rpc('resumo_para_eliminar', { ids }),
+        client.rpc('com_dois_fatores', { ids }),
       ])
-    : [{ data: [] }, { data: {} }];
+    : [{ data: [] }, { data: {} }, { data: [] }];
+  const temDoisFatores = (id: string) => ((comSegundoFator ?? []) as string[]).includes(id);
   type Resumo = {
     confirmado: boolean; ultimo_acesso: string | null; processos: number; rendimentos: number;
     documentos: number; mensagens: number; pago_em: string | null; processo: string | null;
@@ -173,6 +175,22 @@ export default async function Utilizadores({
 
                     {perfil.id !== user.id && !perfil.deleted_at && (
                       <div className={e.fichaCaixas}>
+                        <div className={e.fichaCaixa}>
+                          <h3>Autenticação de dois fatores</h3>
+                          {temDoisFatores(perfil.id) ? (
+                            <form action={disableTwoFactor} className="pilha pilha-3">
+                              <p className="pequeno">Ativa. Para a desativar (por exemplo, se o cliente perdeu o telemóvel), confirme com a sua palavra-passe.</p>
+                              <input name="user" type="hidden" value={perfil.id} />
+                              <label className="campo">
+                                <span>A sua palavra-passe</span>
+                                <input name="password" type="password" className="entrada" autoComplete="current-password" required maxLength={128} />
+                              </label>
+                              <Submeter className="btn btn-secundario btn-sm" aDecorrer="…">Desativar dois fatores</Submeter>
+                            </form>
+                          ) : (
+                            <p className="pequeno suave">Não ativa. O cliente ativa-a no portal, em «A minha conta».</p>
+                          )}
+                        </div>
                         <div className={e.fichaCaixa}>
                           <h3>Perfil e acesso</h3>
                           <form action={setAccountant} className="pilha pilha-2">
