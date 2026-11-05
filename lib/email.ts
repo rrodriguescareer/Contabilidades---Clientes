@@ -64,7 +64,7 @@ export function html(e: Email) {
           ${p}${destaque}${botao}
         </td></tr>
         <tr><td style="padding:18px 28px 24px;border-top:1px solid #e4ebf6">
-          <p style="margin:0 0 6px;font-size:13px;color:#33475b"><strong>Rúben Meirinho Rodrigues</strong> · Contabilista Certificado n.º 145854</p>
+          <p style="margin:0 0 6px;font-size:13px;color:#33475b"><strong>Rúben Meirinho Rodrigues</strong> · Contabilista Certificado n.º 106297</p>
           <p style="margin:0;font-size:12px;line-height:1.5;color:#7a8aa0">Rua Augusto Simões 845, 4470-147 Maia · ${RESPOSTA}<br>Mensagem automática do portal IRS. Pode responder a este email ou usar as mensagens no portal.</p>
         </td></tr>
       </table>
@@ -77,7 +77,7 @@ function texto(e: Email) {
   return [e.titulo, '', ...e.paragrafos,
     ...(e.destaque ? ['', `${e.destaque.rotulo}: ${e.destaque.valor}`] : []),
     ...(e.botao ? ['', `${e.botao.texto}: ${e.botao.url}`] : []),
-    '', '—', 'Rúben Meirinho Rodrigues · Contabilista Certificado n.º 145854', RESPOSTA].join('\n');
+    '', '—', 'Rúben Meirinho Rodrigues · Contabilista Certificado n.º 106297', RESPOSTA].join('\n');
 }
 
 /** Envia um email uma vez só por chave. Devolve se saiu agora. */

@@ -44,7 +44,7 @@ export function Folha({ processo, dados, stripe }: { processo: string; dados: Re
         <table className={r.ficha}>
           <tbody>
             <tr><th>Nome</th><td>Rúben Miguel da Silva Duarte Meirinho Rodrigues</td></tr>
-            <tr><th>Qualidade</th><td>Contabilista Certificado — cédula profissional n.º 145854</td></tr>
+            <tr><th>Qualidade</th><td>Contabilista Certificado — cédula profissional n.º 106297</td></tr>
             <tr><th>Domicílio profissional</th><td>Rua Augusto Simões 845, 4470-147 Maia, Portugal</td></tr>
             <tr><th>Contacto</th><td>contabilidade.rubenrodrigues@gmail.com</td></tr>
             <tr><th>Plataforma</th><td>irs.rr-contabilidade.com</td></tr>
@@ -191,7 +191,7 @@ export function Folha({ processo, dados, stripe }: { processo: string; dados: Re
             <span className={r.linha} />
             <p>Assinatura</p>
             <p className={r.preenchido}>Rúben Miguel da Silva Duarte Meirinho Rodrigues</p>
-            <p>Contabilista Certificado · Cédula n.º 145854</p>
+            <p>Contabilista Certificado · Cédula n.º 106297</p>
           </div>
         </div>
       </section>

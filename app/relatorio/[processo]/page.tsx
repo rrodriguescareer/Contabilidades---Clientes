@@ -119,7 +119,7 @@ export default async function Relatorio({ params }: Props) {
       })}
 
       <footer className={r.rodape}>
-        Rúben Miguel da Silva Duarte Meirinho Rodrigues · Contabilista Certificado n.º 145854
+        Rúben Miguel da Silva Duarte Meirinho Rodrigues · Contabilista Certificado n.º 106297
         <br />
         Documento de apoio interno. Não substitui a declaração submetida na Autoridade Tributária.
       </footer>
