@@ -19,9 +19,14 @@ export const GESTAO = (process.env.NEXT_PUBLIC_GESTAO_URL || 'https://gestao.rr-
 export type Email = {
   chave: string;
   para: string;
+  /** Pessoas em cópia (a Secretária). */
+  cc?: string[];
   assunto: string;
   titulo: string;
-  paragrafos: string[];
+  /** Texto corrido; um objeto desenha uma lista com o seu título. */
+  paragrafos: (string | { lista: string; itens: string[] })[];
+  /** Substitui a nota final, por omissão a do portal IRS. */
+  rodape?: string;
   destaque?: { rotulo: string; valor: string } | null;
   botao?: { texto: string; url: string } | null;
   conta?: string | null;
@@ -36,8 +41,10 @@ const esc = (t: string) =>
 
 /** O HTML do email (também usado para o pré-visualizar). */
 export function html(e: Email) {
-  const p = e.paragrafos.map((t) =>
-    `<p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#33475b">${esc(t)}</p>`).join('');
+  const p = e.paragrafos.map((t) => typeof t === 'string'
+    ? `<p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#33475b">${esc(t).replace(/\n/g, '<br>')}</p>`
+    : `<p style="margin:0 0 6px;font-size:14px;font-weight:700;color:#0a2344">${esc(t.lista)}</p>
+       <ol style="margin:0 0 16px;padding:0 0 0 22px;font-size:14px;line-height:1.55;color:#33475b">${t.itens.map((i) => `<li style="margin:0 0 4px">${esc(i)}</li>`).join('')}</ol>`).join('');
   const destaque = e.destaque ? `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:6px 0 20px;border-collapse:separate">
       <tr><td style="background:#eef3fd;border-radius:12px;padding:16px 18px">
@@ -65,7 +72,7 @@ export function html(e: Email) {
         </td></tr>
         <tr><td style="padding:18px 28px 24px;border-top:1px solid #e4ebf6">
           <p style="margin:0 0 6px;font-size:13px;color:#33475b"><strong>Rúben Meirinho Rodrigues</strong> · Contabilista Certificado n.º 106297</p>
-          <p style="margin:0;font-size:12px;line-height:1.5;color:#7a8aa0">Rua Augusto Simões 845, 4470-147 Maia · ${RESPOSTA}<br>Mensagem automática do portal IRS. Pode responder a este email ou usar as mensagens no portal.</p>
+          <p style="margin:0;font-size:12px;line-height:1.5;color:#7a8aa0">Rua Augusto Simões 845, 4470-147 Maia · ${RESPOSTA}<br>${esc(e.rodape ?? 'Mensagem automática do portal IRS. Pode responder a este email ou usar as mensagens no portal.')}</p>
         </td></tr>
       </table>
     </td></tr>
@@ -74,7 +81,7 @@ export function html(e: Email) {
 }
 
 function texto(e: Email) {
-  return [e.titulo, '', ...e.paragrafos,
+  return [e.titulo, '', ...e.paragrafos.flatMap((t) => typeof t === 'string' ? [t, ''] : [t.lista, ...t.itens.map((i, n) => `${n + 1}. ${i}`), '']),
     ...(e.destaque ? ['', `${e.destaque.rotulo}: ${e.destaque.valor}`] : []),
     ...(e.botao ? ['', `${e.botao.texto}: ${e.botao.url}`] : []),
     '', '—', 'Rúben Meirinho Rodrigues · Contabilista Certificado n.º 106297', RESPOSTA].join('\n');
@@ -97,7 +104,7 @@ export async function enviarEmail(e: Email): Promise<boolean> {
     const r = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${chave}`, 'Content-Type': 'application/json', 'Idempotency-Key': `rr-${id}` },
-      body: JSON.stringify({ from: REMETENTE, to: [e.para], reply_to: RESPOSTA, subject: e.assunto, html: html(e), text: texto(e) }),
+      body: JSON.stringify({ from: REMETENTE, to: [e.para], ...(e.cc?.length ? { cc: e.cc } : {}), reply_to: RESPOSTA, subject: e.assunto, html: html(e), text: texto(e) }),
       cache: 'no-store',
     });
     const corpo = await r.json().catch(() => ({})) as { id?: string; message?: string };

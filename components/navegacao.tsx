@@ -20,6 +20,18 @@ const GRUPOS: { titulo: string; itens: Item[] }[] = [
     ],
   },
   {
+    titulo: 'Secretária',
+    itens: [
+      { href: '/secretaria', nome: 'Painel', icone: 'painel' },
+      { href: '/secretaria/clientes', nome: 'Clientes', icone: 'pessoas' },
+      { href: '/secretaria/aprovar', nome: 'Por aprovar', icone: 'aprovar', contagem: 'secretaria_aprovar' },
+      { href: '/secretaria/comunicacoes', nome: 'Comunicações', icone: 'envelope' },
+      { href: '/secretaria/identificar', nome: 'Por identificar', icone: 'lupa', contagem: 'secretaria_identificar' },
+      { href: '/secretaria/definicoes', nome: 'Definições', icone: 'regua' },
+      { href: '/secretaria/auditoria', nome: 'Auditoria', icone: 'escudo' },
+    ],
+  },
+  {
     titulo: 'Clientes',
     itens: [
       { href: '/app', nome: 'Visão geral', icone: 'grelha' },
@@ -52,7 +64,7 @@ export function Navegacao({ contagens = {} }: { contagens?: Record<string, numbe
 
   const atual = (href: string) => {
     const [rota, query] = href.split('?');
-    if (rota !== caminho) return false;
+    if (rota !== caminho) return rota === '/secretaria/clientes' || rota === '/empresas' ? caminho.startsWith(`${rota}/`) : false;
     if (rota !== '/irs') return true;
     const pedido = new URLSearchParams(query || '').get('separador') || '';
     return pedido === separador;
@@ -69,7 +81,7 @@ export function Navegacao({ contagens = {} }: { contagens?: Record<string, numbe
               <Link prefetch={false} key={m.href} href={m.href} className={e.navLink}
                     aria-current={atual(m.href) ? 'page' : undefined}>
                 <Icone nome={m.icone} />
-                <span className={e.navNome}>{m.nome}</span>
+                <span className={e.navNome} title={m.nome}>{m.nome}</span>
                 {n ? <span className={e.navContagem}>{n}</span> : null}
               </Link>
             );
@@ -86,6 +98,12 @@ export function Icone({ nome }: { nome: string }) {
     strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, 'aria-hidden': true,
   };
   switch (nome) {
+    case 'painel': return <svg {...p}><path d="M3 13a9 9 0 0 1 18 0" /><path d="M12 13l4-4" /><path d="M3 17h18" /></svg>;
+    case 'aprovar': return <svg {...p}><circle cx="12" cy="12" r="9" /><path d="m8.5 12.5 2.5 2.5 4.5-5" /></svg>;
+    case 'envelope': return <svg {...p}><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" /></svg>;
+    case 'lupa': return <svg {...p}><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>;
+    case 'regua': return <svg {...p}><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h7M15 18h5" /><circle cx="16" cy="6" r="2" /><circle cx="8" cy="12" r="2" /><circle cx="13" cy="18" r="2" /></svg>;
+    case 'escudo': return <svg {...p}><path d="M12 3 5 6v5c0 5 3 8 7 10 4-2 7-5 7-10V6z" /><path d="m9 12 2 2 4-4" /></svg>;
     case 'pasta': return <svg {...p}><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>;
     case 'balao': return <svg {...p}><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" /></svg>;
     case 'grelha': return <svg {...p}><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></svg>;

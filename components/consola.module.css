@@ -8,7 +8,11 @@
   grid-template-columns: 16rem minmax(0, 1fr);
   background: var(--fundo);
 }
-@media (max-width: 1000px) { .consola { grid-template-columns: 1fr; } }
+/* O menu recolhido aos ícones (ver menu-lateral.tsx). */
+.consola:has(.lateral[data-recolhido='true']) { grid-template-columns: 4.5rem minmax(0, 1fr); }
+@media (max-width: 1000px) {
+  .consola, .consola:has(.lateral[data-recolhido='true']) { grid-template-columns: minmax(0, 1fr); }
+}
 
 /* ---------------- Barra lateral ---------------- */
 .lateral {
@@ -24,8 +28,70 @@
   block-size: 100dvh;
   overflow-y: auto;
 }
+/* Em telemóvel, o menu é uma gaveta: abre-se quando faz falta. */
+.barraMovel { display: none; }
+.veu { display: none; }
 @media (max-width: 1000px) {
-  .lateral { position: static; block-size: auto; border-inline-end: 0; border-block-end: 1px solid var(--linha); }
+  .barraMovel {
+    position: sticky; inset-block-start: 0; z-index: 40;
+    display: flex; align-items: center; justify-content: space-between; gap: var(--e-3);
+    padding: .55rem var(--e-4); padding-block-start: calc(.55rem + env(safe-area-inset-top));
+    background: var(--superficie); border-block-end: 1px solid var(--linha);
+  }
+  .abrirMenu { display: grid; place-items: center; inline-size: 2.75rem; block-size: 2.75rem; border-radius: .7rem; color: var(--texto); }
+  .abrirMenu:hover { background: var(--superficie-afundada); }
+  .veu { display: block; position: fixed; inset: 0; z-index: 49; border: 0; background: rgb(6 23 46 / .45); }
+  .lateral {
+    position: fixed; inset-block: 0; inset-inline-start: 0; z-index: 50;
+    inline-size: min(19rem, 86vw); block-size: 100dvh;
+    transform: translateX(-102%); transition: transform var(--normal) var(--curva);
+    box-shadow: var(--sombra-3);
+  }
+  .lateral[data-aberto='true'] { transform: none; }
+  .recolher { display: none !important; }
+}
+
+.lateralTopo { display: flex; align-items: center; justify-content: space-between; gap: var(--e-2); }
+.recolher { display: grid; place-items: center; flex: none; inline-size: 2.1rem; block-size: 2.1rem; border-radius: .55rem; color: var(--texto-suave); }
+.recolher:hover { background: var(--superficie-afundada); color: var(--texto); }
+
+/* Procurar, de qualquer ecrã. */
+.procuraBotao {
+  display: flex; align-items: center; gap: .6rem; inline-size: 100%;
+  padding: .5rem .7rem; border: 1px solid var(--linha); border-radius: .65rem;
+  background: var(--superficie-2); color: var(--texto-suave); font-size: var(--t-sm); text-align: start;
+}
+.procuraBotao:hover { border-color: var(--linha-forte); color: var(--texto); }
+.procuraBotao svg { flex: none; }
+.procuraBotao kbd { flex: none; padding: .05rem .35rem; border: 1px solid var(--linha); border-radius: .35rem; background: var(--superficie); font: inherit; font-size: .68rem; color: var(--texto-ténue); }
+@media (hover: none) { .procuraBotao kbd { display: none; } }
+.procuraJanela {
+  margin-block-start: 12vh; padding: 0; border: 0; border-radius: 1rem; inline-size: min(34rem, calc(100vw - 1.5rem));
+  background: var(--superficie); color: var(--texto); box-shadow: var(--sombra-3);
+}
+.procuraJanela::backdrop { background: rgb(6 23 46 / .45); }
+.procuraCampo { inline-size: 100%; padding: 1rem 1.15rem; border: 0; border-block-end: 1px solid var(--linha); background: transparent; font-size: var(--t-md); outline: none; }
+.procuraLista { list-style: none; margin: 0; padding: .4rem; display: grid; gap: 2px; }
+.procuraLista button { display: flex; justify-content: space-between; align-items: center; gap: var(--e-3); inline-size: 100%; padding: .6rem .75rem; border-radius: .6rem; text-align: start; }
+.procuraLista button[data-ativo='true'] { background: var(--acao-suave); }
+.procuraLista strong { font-size: var(--t-base); font-weight: 650; }
+.procuraLista span { flex: none; font-size: var(--t-xs); color: var(--texto-suave); }
+.procuraVazio { padding: 1.1rem 1.15rem; font-size: var(--t-sm); color: var(--texto-suave); }
+
+/* Recolhido: só os ícones, com o nome no título. */
+@media (min-width: 1001px) {
+  .lateral[data-recolhido='true'] { padding-inline: .6rem; align-items: stretch; }
+  .lateral[data-recolhido='true'] .soAberto,
+  .lateral[data-recolhido='true'] .navGrupo,
+  .lateral[data-recolhido='true'] .navNome,
+  .lateral[data-recolhido='true'] .procuraBotao kbd,
+  .lateral[data-recolhido='true'] .eu > div,
+  .lateral[data-recolhido='true'] .sair span { display: none; }
+  .lateral[data-recolhido='true'] .lateralTopo { justify-content: center; }
+  .lateral[data-recolhido='true'] .navLink, .lateral[data-recolhido='true'] .procuraBotao { justify-content: center; position: relative; padding-inline: .4rem; }
+  .lateral[data-recolhido='true'] .navBloco + .navBloco { border-block-start: 1px solid var(--linha); margin-block-start: .4rem; padding-block-start: .4rem; }
+  .lateral[data-recolhido='true'] .navContagem { position: absolute; inset-block-start: 0; inset-inline-end: 0; min-inline-size: 1.1rem; padding: 0 .25rem; font-size: .62rem; }
+  .lateral[data-recolhido='true'] .eu { justify-content: center; }
 }
 .marca { display: flex; align-items: center; gap: .7rem; padding-inline: var(--e-2); text-decoration: none; }
 .marca img { inline-size: 3.6rem; block-size: auto; display: block; }
@@ -151,6 +217,7 @@
      largura em vez de deixarem uma faixa vazia à direita. */
   padding: var(--e-5) clamp(var(--e-4), 2.5vw, var(--e-8)) var(--e-8);
 }
+@media (max-width: 1000px) { .topo { position: static; backdrop-filter: none; min-block-size: 0; } }
 @media (max-width: 700px) { .topo, .conteudo { padding-inline: var(--e-4); } }
 
 .secao { display: grid; gap: var(--e-4); }

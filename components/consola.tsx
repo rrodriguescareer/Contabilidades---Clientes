@@ -4,7 +4,9 @@ import { Suspense } from 'react';
 import { contagensDoGabinete } from '@/lib/irs-actions';
 import { Chegada } from './chegada';
 import { signOut } from '@/lib/auth-actions';
+import { MenuLateral } from './menu-lateral';
 import { Navegacao } from './navegacao';
+import { ProcuraGlobal } from './procura-global';
 import { Titulo } from './titulo';
 import e from './consola.module.css';
 
@@ -13,11 +15,13 @@ import e from './consola.module.css';
 export async function Lateral({ email, administrador }: { email: string; administrador: boolean }) {
   const contagens = await contagensDoGabinete().catch(() => ({}));
   return (
-    <aside className={e.lateral}>
+    <MenuLateral marca={
       <Link prefetch={false} href="/irs" className={e.marca}>
         <img src="/rr.svg" alt="RR." width={259} height={142} />
         <span className={e.modo}>Gabinete</span>
       </Link>
+    }>
+      <ProcuraGlobal />
 
       <Suspense fallback={null}>
         <Navegacao contagens={contagens} />
@@ -41,7 +45,7 @@ export async function Lateral({ email, administrador }: { email: string; adminis
           </button>
         </form>
       </div>
-    </aside>
+    </MenuLateral>
   );
 }
 

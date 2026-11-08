@@ -3,6 +3,16 @@
 import { usePathname } from 'next/navigation';
 import e from './consola.module.css';
 
+const SECRETARIA: Record<string, string> = {
+  '/secretaria': 'Painel',
+  '/secretaria/clientes': 'Clientes',
+  '/secretaria/aprovar': 'Pedidos por aprovar',
+  '/secretaria/comunicacoes': 'Comunicações',
+  '/secretaria/identificar': 'Por identificar',
+  '/secretaria/definicoes': 'Definições',
+  '/secretaria/auditoria': 'Auditoria',
+};
+
 const TITULOS: Record<string, string> = {
   '/app': 'Visão geral',
   '/utilizadores': 'Utilizadores e acessos',
@@ -17,10 +27,12 @@ const TITULOS: Record<string, string> = {
 
 export function Titulo() {
   const caminho = usePathname();
+  const secretaria = caminho === '/secretaria' || caminho.startsWith('/secretaria/');
+  const titulo = secretaria ? SECRETARIA[caminho] ?? 'Ficha do cliente' : TITULOS[caminho] ?? 'Gestão';
   return (
     <div className={e.topoTitulo}>
-      <h1>{TITULOS[caminho] ?? 'Gestão'}</h1>
-      <span>Gestão de clientes</span>
+      <h1>{titulo}</h1>
+      <span>{secretaria ? 'Secretária' : 'Gestão de clientes'}</span>
     </div>
   );
 }
