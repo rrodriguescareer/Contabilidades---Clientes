@@ -15,6 +15,8 @@ async function preparar(){
  create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
  create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text references storage.buckets(id),name text not null,metadata jsonb);
  alter table storage.objects enable row level security;grant select,insert on storage.objects to authenticated;`);
+ // O Supabase dá estas permissões a cada função nova: a migração tem de as tirar.
+ await db.exec('alter default privileges in schema public grant all on functions to anon, authenticated, service_role;');
  await db.exec(sql);
  for(const id of [STAFF,CLIENTE])await db.query('insert into auth.users(id,email,raw_user_meta_data) values($1,$2,$3)',[id,id===STAFF?'contabilidade.rubenrodrigues@gmail.com':'cliente@example.com',JSON.stringify({full_name:'Teste',birth_date:'1980-01-01',nif:'123456789',terms_accepted:true,terms_version:'2026-10-28.1',privacy_version:'2026-10-28.1'})]);
  await db.query('insert into public.staff_users(user_id) values($1) on conflict do nothing',[STAFF]);

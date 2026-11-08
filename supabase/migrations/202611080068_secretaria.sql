@@ -875,7 +875,7 @@ $a$'em_falta', coalesce(jsonb_array_length((public.portal_pendencias(empresa))->
 
   for f in select p.oid::regprocedure from pg_proc p where p.pronamespace = 'public'::regnamespace
             and (p.proname like 'secretaria\_%' or p.proname = 'portal_pendencias') loop
-    execute format('revoke all on function %s from public, anon', f);
+    execute format('revoke all on function %s from public, anon, authenticated', f);
     execute format('grant execute on function %s to service_role', f);
   end loop;
 end $x$;
