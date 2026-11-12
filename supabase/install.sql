@@ -9177,5 +9177,11 @@ drop policy if exists resource_delete on public.income_records;
 create policy resource_delete on public.income_records for delete to authenticated
   using (public.can_edit_case(account_id, case_id));
 
+-- Source: 202611120071_secretaria_modelos_indice.sql
+-- A chave estrangeira dos modelos por cliente não tinha índice (o índice único
+-- usa uma expressão e não a cobre): apagar uma empresa percorria a tabela toda.
+
+create index if not exists secretaria_modelos_empresa on public.secretaria_modelos(company_id);
+
 commit;
 select 'Instalacao concluida: estrutura IRS e Gestao criada.' as resultado;
