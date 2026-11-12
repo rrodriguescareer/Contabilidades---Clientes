@@ -558,6 +558,10 @@ a.item { text-decoration: none; }
 @media (max-width: 1100px) {
   .esconderPequeno { display: none; }
 }
+/* Abaixo disto o menu é uma gaveta com a sua barra fixa: o topo segue a página. */
+@media (max-width: 1000px) {
+  .topo { position: static; backdrop-filter: none; }
+}
 @media (max-width: 860px) {
   .consola { grid-template-columns: 1fr; }
   .lateral {

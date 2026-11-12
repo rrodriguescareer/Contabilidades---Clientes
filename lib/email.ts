@@ -21,6 +21,8 @@ export type Email = {
   para: string;
   /** Pessoas em cópia (a Secretária). */
   cc?: string[];
+  /** Outro remetente do mesmo domínio (por omissão, o do portal IRS). */
+  de?: string;
   assunto: string;
   titulo: string;
   /** Texto corrido; um objeto desenha uma lista com o seu título. */
@@ -92,6 +94,7 @@ export async function enviarEmail(e: Email): Promise<boolean> {
   const chave = process.env.RESEND_API_KEY || '';
   if (!/^re_/.test(chave) || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e.para)) return false;
   const admin = adminClient();
+  let registo: string | undefined;
   try {
     const { data: novo } = await admin.from('emails')
       .upsert({ chave: e.chave.slice(0, 200), para: e.para, assunto: e.assunto.slice(0, 250),
@@ -100,12 +103,15 @@ export async function enviarEmail(e: Email): Promise<boolean> {
       .select('id');
     const id = novo?.[0]?.id;
     if (!id) return false; // já tinha sido enviado
+    registo = id;
 
     const r = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${chave}`, 'Content-Type': 'application/json', 'Idempotency-Key': `rr-${id}` },
-      body: JSON.stringify({ from: REMETENTE, to: [e.para], ...(e.cc?.length ? { cc: e.cc } : {}), reply_to: RESPOSTA, subject: e.assunto, html: html(e), text: texto(e) }),
+      body: JSON.stringify({ from: e.de || REMETENTE, to: [e.para], ...(e.cc?.length ? { cc: e.cc } : {}), reply_to: RESPOSTA, subject: e.assunto, html: html(e), text: texto(e) }),
       cache: 'no-store',
+      // Sem resposta em 20 segundos, desiste: a página não fica presa ao email.
+      signal: AbortSignal.timeout(20_000),
     });
     const corpo = await r.json().catch(() => ({})) as { id?: string; message?: string };
     if (!r.ok) {
@@ -122,7 +128,10 @@ export async function enviarEmail(e: Email): Promise<boolean> {
     }
     return true;
   } catch (falha) {
-    console.error(JSON.stringify({ event: 'rr_email_falhou', chave: e.chave, erro: String((falha as Error)?.message || falha) }));
+    const erro = String((falha as Error)?.message || falha);
+    console.error(JSON.stringify({ event: 'rr_email_falhou', chave: e.chave, erro }));
+    // O registo diz a verdade: não fica «a enviar» para sempre.
+    if (registo) await admin.from('emails').update({ estado: 'falhou', erro: erro.slice(0, 500) }).eq('id', registo).eq('estado', 'a_enviar').then(() => null, () => null);
     return false;
   }
 }

@@ -10,6 +10,8 @@ import { comporEmail, dataPt, type PendenciaAberta } from './secretaria';
  * A base reserva o envio (nunca sai duas vezes). Cada email leva uma ligação
  * própria, gerada aqui: guarda-se só o hash, e a ligação morre com o processo. */
 
+/* Os pedidos às empresas saem do endereço do portal Empresas, não do IRS. */
+const REMETENTE = 'Rúben Meirinho Rodrigues <portal@rr-contabilidade.com>';
 const ENTREGA = (process.env.NEXT_PUBLIC_EMPRESAS_URL || 'https://portal.rr-contabilidade.com').replace(/\/$/, '');
 
 type Reserva = {
@@ -39,7 +41,7 @@ export async function enviarPedido(id: string): Promise<{ ok: boolean; erro?: st
   const email = comporEmail({ tipo: r.tipo, assunto: r.assunto, corpo: r.corpo, empresa: r.empresa, contacto: principal.nome, pendencias: r.pendencias, diaLimite: r.dia_limite });
 
   const ok = await enviarEmail({
-    chave: `secretaria:${id}:${r.tentativas}`, para: principal.email, cc, interno: true,
+    chave: `secretaria:${id}:${r.tentativas}`, para: principal.email, cc, interno: true, de: REMETENTE,
     assunto: email.assunto, titulo: email.titulo, paragrafos: email.paragrafos, rodape: email.rodape,
     botao: { texto: 'Entregar os documentos', url: `${ENTREGA}/entregar/${token}` },
   });

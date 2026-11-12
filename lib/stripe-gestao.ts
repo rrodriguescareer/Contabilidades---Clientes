@@ -8,16 +8,23 @@ const chave = () => process.env.STRIPE_SECRET_KEY || '';
 async function pedir<T>(caminho: string, corpo?: Record<string, string>, idempotencia?: string) {
   const k = chave();
   if (!/^sk_(test|live)_/.test(k)) return { ok: false as const, erro: 'A Stripe não está configurada na gestão.' };
-  const r = await fetch(`https://api.stripe.com/v1${caminho}`, {
-    method: corpo ? 'POST' : 'GET',
-    headers: {
-      Authorization: `Bearer ${k}`,
-      ...(corpo ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}),
-      ...(idempotencia ? { 'Idempotency-Key': idempotencia } : {}),
-    },
-    body: corpo ? new URLSearchParams(corpo).toString() : undefined,
-    cache: 'no-store',
-  });
+  let r: Response;
+  try {
+    r = await fetch(`https://api.stripe.com/v1${caminho}`, {
+      method: corpo ? 'POST' : 'GET',
+      headers: {
+        Authorization: `Bearer ${k}`,
+        ...(corpo ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}),
+        ...(idempotencia ? { 'Idempotency-Key': idempotencia } : {}),
+      },
+      body: corpo ? new URLSearchParams(corpo).toString() : undefined,
+      cache: 'no-store',
+      signal: AbortSignal.timeout(20_000),
+    });
+  } catch {
+    // Repetir é seguro: a chave de idempotência impede uma segunda devolução.
+    return { ok: false as const, erro: 'Não foi possível falar com a Stripe. Tente novamente.' };
+  }
   const dados = await r.json().catch(() => ({}));
   if (!r.ok) {
     const msg = (dados as { error?: { message?: string } }).error?.message;

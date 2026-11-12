@@ -3,6 +3,7 @@ import { ownerSession } from '@/lib/auth';
 import { Avisos } from '@/components/consola';
 import { IniciarProcesso, Numero, Progresso, SeletorPeriodo } from '@/components/secretaria/comum';
 import { PRAZOS, dataHoraPt, dataPt, lerPeriodo, limiteSugerido, linhaDocumento, respostaTexto, type ClienteResumo, type PendenciaAberta } from '@/lib/secretaria';
+import { clientesResumo } from '@/lib/secretaria-dados';
 import s from '@/components/secretaria/secretaria.module.css';
 
 export const dynamic = 'force-dynamic';
@@ -24,11 +25,10 @@ export default async function ClientesSecretaria({ searchParams }: { searchParam
   const { client } = await ownerSession();
   const pedido = await searchParams;
   const periodo = lerPeriodo(pedido.modo, pedido.p);
-  const [{ data: lista }, { data: definicoes }] = await Promise.all([
-    client.rpc('secretaria_clientes_resumo', { desde: periodo.desde, ate: periodo.ate }),
+  const [clientes, { data: definicoes }] = await Promise.all([
+    clientesResumo(client, periodo),
     client.from('secretaria_definicoes').select('aprovar,dia_limite').maybeSingle(),
   ]);
-  const clientes = (lista ?? []) as ClienteResumo[];
 
   const filtro = FILTROS.find((f) => f.chave === pedido.f) ?? FILTROS[0];
   const q = (pedido.q || '').trim().toLowerCase();

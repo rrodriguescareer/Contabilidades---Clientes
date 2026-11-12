@@ -3,7 +3,8 @@ import { ownerSession } from '@/lib/auth';
 import { Avisos } from '@/components/consola';
 import { Icone } from '@/components/navegacao';
 import { Faixa, Numero } from '@/components/secretaria/comum';
-import { PRAZOS, dataHoraPt, respostaTexto, type ClienteResumo } from '@/lib/secretaria';
+import { PRAZOS, dataHoraPt, respostaTexto } from '@/lib/secretaria';
+import { TODOS, clientesResumo } from '@/lib/secretaria-dados';
 import s from '@/components/secretaria/secretaria.module.css';
 
 export const dynamic = 'force-dynamic';
@@ -21,12 +22,11 @@ const ORDEM: Record<string, number> = { fora: 0, em_risco: 1, apertado: 2, em_di
 export default async function PainelSecretaria({ searchParams }: { searchParams: Promise<{ erro?: string; mensagem?: string }> }) {
   const { client } = await ownerSession();
   const avisos = await searchParams;
-  const [{ data: bruto }, { data: lista }] = await Promise.all([
+  const [{ data: bruto }, clientes] = await Promise.all([
     client.rpc('secretaria_painel'),
-    client.rpc('secretaria_clientes_resumo', { desde: '2000-01-01', ate: '2099-12-01' }),
+    clientesResumo(client, TODOS),
   ]);
   const p = bruto as Painel;
-  const clientes = (lista ?? []) as ClienteResumo[];
 
   const tarefas = [
     p.falharam > 0 && { tom: 'critico', icone: 'sino', titulo: `${plural(p.falharam, 'email falhou', 'emails falharam')}`, texto: 'Veja o motivo e tente novamente.', href: '/secretaria/aprovar', botao: 'Rever' },

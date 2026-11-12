@@ -1,6 +1,8 @@
 'use server';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { adminClient } from './admin-client';
 import { ownerSession, session } from './auth';
 import { uuid } from './data';
 import { enviarPedido } from './secretaria-envio';
@@ -43,7 +45,8 @@ export async function guardarPendencia(f: FormData) {
   const data = texto(f, 'data');
   if (!uuid(empresa) || !TIPOS[tipo] || !descricao) volta(f, 'erro', 'Indique o tipo e a descrição do documento.');
   if (data && !/^\d{4}-\d{2}-\d{2}$/.test(data)) volta(f, 'erro', 'A data não é válida.');
-  const periodo = texto(f, 'periodo') || data.slice(0, 7);
+  // Com data, o período é o mês da data; o campo do período só serve sem ela.
+  const periodo = data ? data.slice(0, 7) : texto(f, 'periodo');
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(periodo)) volta(f, 'erro', 'Indique a data do documento ou o período a que respeita.');
   const valorTexto = texto(f, 'valor');
   const valor = valorTexto ? lerValor(valorTexto) : null;
@@ -177,6 +180,55 @@ export async function decidirEnvio(f: FormData) {
   volta(f, e.ok ? 'mensagem' : 'erro', e.ok ? 'Email aprovado e enviado.' : `O email não saiu: ${e.erro}`, '/secretaria/aprovar');
 }
 
+/** Um lembrete já, sem esperar pelo calendário: serve quando o envio
+    automático está desligado ou quando não se quer esperar. Passa pela mesma
+    aprovação dos outros emails. */
+export async function enviarLembrete(f: FormData) {
+  const { client } = await ownerSession();
+  const id = texto(f, 'processo');
+  if (!uuid(id)) volta(f, 'erro', 'Processo inválido.');
+  const { data: p } = await client.from('secretaria_processos').select('id,company_id,estado,dia_limite').eq('id', id).maybeSingle();
+  if (!p || p.estado !== 'em_curso') volta(f, 'erro', 'Este processo já terminou.');
+  const { data: envios } = await client.from('secretaria_envios').select('id,tipo,estado').eq('processo_id', p.id);
+  const espera = (envios ?? []).find((e) => e.estado === 'por_aprovar');
+  if (espera) volta(f, 'mensagem', 'Já há um email deste cliente à espera da sua aprovação.', `/secretaria/aprovar?e=${espera.id}`);
+  if ((envios ?? []).some((e) => e.estado === 'a_enviar')) volta(f, 'erro', 'Já há um email deste cliente a ser enviado. Aguarde um momento.');
+  const { count } = await client.from('secretaria_pendencias').select('id', { count: 'exact', head: true }).eq('company_id', p.company_id).eq('estado', 'pendente').eq('acompanhar', true);
+  if (!count) volta(f, 'erro', 'Não há pendências em acompanhamento para pedir.');
+
+  const admin = adminClient();
+  const tipo = (envios ?? []).some((e) => e.tipo === 'pedido' && e.estado === 'enviado') ? 'insistencia' : 'pedido';
+  const { data: novo, error } = await admin.rpc('secretaria_novo_envio', { p_processo: p.id, p_tipo: tipo });
+  if (error || !novo) volta(f, 'erro', 'Não foi possível preparar o lembrete.');
+  await client.rpc('secretaria_auditar', { p_acao: 'Lembrete pedido', p_empresa: p.company_id, p_detalhe: tipo === 'pedido' ? 'Primeiro pedido, enviado à mão' : 'Insistência enviada à mão' });
+
+  // O calendário recomeça a contar de agora: não sai outro lembrete amanhã.
+  const { data: cadencia } = await admin.rpc('secretaria_cadencia_de', { empresa: p.company_id });
+  const { data: proximo } = await admin.rpc('secretaria_proximo_envio', { cad: cadencia, depois: new Date().toISOString() });
+  if (typeof proximo === 'string') {
+    const dia = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Lisbon' }).format(new Date(proximo));
+    await client.from('secretaria_processos').update({ proximo_envio: dia > p.dia_limite ? null : proximo }).eq('id', p.id).eq('estado', 'em_curso').not('proximo_envio', 'is', null);
+  }
+
+  const { data: criado } = await client.from('secretaria_envios').select('estado').eq('id', novo).maybeSingle();
+  if (criado?.estado === 'por_aprovar') volta(f, 'mensagem', 'O lembrete aguarda a sua aprovação.', `/secretaria/aprovar?e=${novo}`);
+  const e = await enviarPedido(String(novo));
+  volta(f, e.ok ? 'mensagem' : 'erro', e.ok ? 'Lembrete enviado.' : `O lembrete não saiu: ${e.erro}`);
+}
+
+/** Desistir de um email que falhou, sem cancelar o processo. */
+export async function descartarEnvio(f: FormData) {
+  const { client } = await ownerSession();
+  const id = texto(f, 'envio');
+  if (!uuid(id)) volta(f, 'erro', 'Envio inválido.');
+  const { data, error } = await client.from('secretaria_envios')
+    .update({ estado: 'rejeitado', decidido_em: new Date().toISOString(), erro: 'Descartado depois de falhar.' })
+    .eq('id', id).eq('estado', 'falhou').select('company_id').maybeSingle();
+  if (error || !data) volta(f, 'erro', 'Este envio já não pode ser descartado.');
+  await client.rpc('secretaria_auditar', { p_acao: 'Email descartado', p_empresa: data.company_id, p_detalhe: 'Depois de falhar o envio.' });
+  volta(f, 'mensagem', 'Email descartado.');
+}
+
 export async function repetirEnvio(f: FormData) {
   const { client } = await ownerSession();
   const id = texto(f, 'envio');
@@ -189,6 +241,17 @@ export async function repetirEnvio(f: FormData) {
 
 /* ------------------------------------------------------------ contactos */
 
+/** Só pode haver um principal: tira-se o anterior e põe-se o novo. Se o
+    segundo passo falhar, repõe-se o anterior. */
+async function tornarPrincipal(client: SupabaseClient, empresa: string, id: string) {
+  const { data: anterior } = await client.from('secretaria_contactos').select('id').eq('company_id', empresa).eq('principal', true).maybeSingle();
+  if (anterior?.id === id) return true;
+  if (anterior) await client.from('secretaria_contactos').update({ principal: false }).eq('id', anterior.id);
+  const { error } = await client.from('secretaria_contactos').update({ principal: true, em_cc: false }).eq('id', id).eq('company_id', empresa);
+  if (error && anterior) await client.from('secretaria_contactos').update({ principal: true }).eq('id', anterior.id);
+  return !error;
+}
+
 export async function guardarContacto(f: FormData) {
   const { client } = await ownerSession();
   const empresa = texto(f, 'empresa');
@@ -196,9 +259,12 @@ export async function guardarContacto(f: FormData) {
   const email = texto(f, 'email').toLowerCase().slice(0, 254);
   if (!uuid(empresa) || !nome || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) volta(f, 'erro', 'Indique o nome e um email válido.');
   const principal = marcado(f, 'principal');
-  if (principal) await client.from('secretaria_contactos').update({ principal: false }).eq('company_id', empresa).eq('principal', true);
-  const { error } = await client.from('secretaria_contactos').insert({ company_id: empresa, nome, email, principal, em_cc: marcado(f, 'em_cc') });
-  if (error) volta(f, 'erro', error.code === '23505' ? 'Esse email já é um contacto deste cliente.' : 'Não foi possível guardar o contacto.');
+  // Primeiro grava-se o contacto; só depois passa a principal. Se a gravação
+  // falhar (email repetido), o principal que lá estava não se perde.
+  const { data: novo, error } = await client.from('secretaria_contactos')
+    .insert({ company_id: empresa, nome, email, principal: false, em_cc: principal ? false : marcado(f, 'em_cc') }).select('id').maybeSingle();
+  if (error || !novo) volta(f, 'erro', error?.code === '23505' ? 'Esse email já é um contacto deste cliente.' : 'Não foi possível guardar o contacto.');
+  if (principal) await tornarPrincipal(client, empresa, novo.id);
   await client.rpc('secretaria_auditar', { p_acao: 'Contacto criado', p_empresa: empresa, p_detalhe: email });
   volta(f, 'mensagem', 'Contacto guardado.');
 }
@@ -215,9 +281,12 @@ export async function mudarContacto(f: FormData) {
     volta(f, 'mensagem', 'Contacto eliminado.');
   }
   const valor = texto(f, 'valor') === 'true';
-  if (campo === 'principal' && valor) await client.from('secretaria_contactos').update({ principal: false }).eq('company_id', empresa).eq('principal', true);
-  const { error } = await client.from('secretaria_contactos').update({ [campo]: valor }).eq('id', id).eq('company_id', empresa);
-  if (error) volta(f, 'erro', 'Não foi possível atualizar o contacto.');
+  if (campo === 'principal' && valor) {
+    if (!(await tornarPrincipal(client, empresa, id))) volta(f, 'erro', 'Não foi possível mudar o contacto principal.');
+  } else {
+    const { error } = await client.from('secretaria_contactos').update({ [campo]: valor }).eq('id', id).eq('company_id', empresa);
+    if (error) volta(f, 'erro', 'Não foi possível atualizar o contacto.');
+  }
   await client.rpc('secretaria_auditar', { p_acao: 'Contacto atualizado', p_empresa: empresa, p_detalhe: `${campo}: ${valor ? 'sim' : 'não'}` });
   volta(f, 'mensagem', 'Contacto atualizado.');
 }
@@ -326,8 +395,9 @@ export async function marcarRevisto(f: FormData) {
 
 export async function procurar(termo: string): Promise<{ id: string; nome: string; nif: string }[]> {
   const { client } = await session();
-  const q = String(termo || '').trim().replace(/[%,()]/g, ' ').trim().slice(0, 60);
+  // Entre aspas, o termo pode ter vírgulas e pontos («Silva, Lda», «S.A.»).
+  const q = String(termo || '').trim().replace(/["\\%]/g, '').slice(0, 60);
   if (q.length < 2) return [];
-  const { data } = await client.from('companies').select('id,name,nif').or(`name.ilike.%${q}%,nif.ilike.%${q}%`).eq('active', true).order('name').limit(8);
+  const { data } = await client.from('companies').select('id,name,nif').or(`name.ilike."%${q}%",nif.ilike."%${q}%"`).eq('active', true).order('name').limit(8);
   return (data ?? []).map((c) => ({ id: c.id, nome: c.name, nif: c.nif }));
 }

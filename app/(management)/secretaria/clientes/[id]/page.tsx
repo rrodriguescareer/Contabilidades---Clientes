@@ -11,7 +11,7 @@ import { EditorModelo } from '@/components/secretaria/editor-modelo';
 import { CamposCadencia } from '@/components/secretaria/cadencia';
 import { TabelaPendencias, type LinhaPendencia } from '@/components/secretaria/tabela-pendencias';
 import {
-  cancelarProcesso, eliminarRecorrente, gerarRecorrentes, guardarCliente, guardarContacto, guardarPendencia, guardarRecorrente, mudarContacto, trazerContactosDoPortal,
+  cancelarProcesso, eliminarRecorrente, enviarLembrete, gerarRecorrentes, guardarCliente, guardarContacto, guardarPendencia, guardarRecorrente, mudarContacto, trazerContactosDoPortal,
 } from '@/lib/secretaria-actions';
 import { ESTADOS_ENVIO, MOTIVOS, TIPOS, cadenciaTexto, dataHoraPt, dataPt, hojeLisboa, lerPeriodo, limiteSugerido, type Cadencia } from '@/lib/secretaria';
 import s from '@/components/secretaria/secretaria.module.css';
@@ -71,10 +71,18 @@ export default async function FichaCliente({ params, searchParams }: { params: P
 
       {proc && (
         <Faixa tom="positivo" acao={
-          <form action={cancelarProcesso}>
-            <input type="hidden" name="processo" value={proc.id} /><input type="hidden" name="voltar" value={aqui} />
-            <Submeter className={s.acaoPequena} aDecorrer="A cancelar…">Cancelar processo</Submeter>
-          </form>
+          <div className={s.acoes}>
+            {numAbertas > 0 && temContacto && (
+              <form action={enviarLembrete}>
+                <input type="hidden" name="processo" value={proc.id} /><input type="hidden" name="voltar" value={aqui} />
+                <Submeter className={s.acaoPequena} aDecorrer="A preparar…">Enviar lembrete agora</Submeter>
+              </form>
+            )}
+            <form action={cancelarProcesso}>
+              <input type="hidden" name="processo" value={proc.id} /><input type="hidden" name="voltar" value={aqui} />
+              <Submeter className={s.acaoPequena} aDecorrer="A cancelar…">Cancelar processo</Submeter>
+            </form>
+          </div>
         }>
           <span><strong>Processo em curso</strong>{proc.proximo_envio ? ` · Próximo envio a ${dataHoraPt(proc.proximo_envio)}` : ''} · termina a {dataPt(proc.dia_limite)}{proc.insistencias ? ` · ${proc.insistencias} insistência${proc.insistencias === 1 ? '' : 's'}` : ''}</span>
         </Faixa>
@@ -102,7 +110,8 @@ async function Pendencias({ id, periodo, aqui, base, pedido, tem, semContacto, l
   const recebidas = validas.filter((l) => ['recebida', 'associada'].includes(l.estado)).length;
   const porReceber = validas.filter((l) => l.estado === 'pendente').length;
   const acompanhadas = validas.filter((l) => l.estado === 'pendente' && l.acompanhar).length;
-  const mesPadrao = periodo.modo === 'mensal' ? periodo.chave : hojeLisboa().slice(0, 7);
+  // Sem um mês escolhido, o que falta é quase sempre do mês anterior.
+  const mesPadrao = periodo.modo === 'mensal' ? periodo.chave : lerPeriodo('mensal').chave;
 
   return (
     <>

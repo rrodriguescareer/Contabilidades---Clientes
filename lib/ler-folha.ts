@@ -57,7 +57,13 @@ async function lerXlsx(b: Uint8Array) {
   const folha = await xml(caminho);
   if (!folha) throw new Error('Não encontrámos a folha do Excel.');
 
-  return Array.from(folha.getElementsByTagName('row')).map((linha) => {
+  // O Excel não grava as linhas vazias: repõem-se, para o número de cada linha
+  // ser o que a pessoa vê na folha quando se diz qual não entrou.
+  const linhas: string[][] = [];
+  for (const linha of Array.from(folha.getElementsByTagName('row'))) {
+    const numero = Number(linha.getAttribute('r')) || linhas.length + 1;
+    if (numero > 20_000) break;
+    while (linhas.length < numero - 1) linhas.push([]);
     const celulas: string[] = [];
     for (const c of Array.from(linha.getElementsByTagName('c'))) {
       const i = coluna(c.getAttribute('r') || 'A');
@@ -65,10 +71,14 @@ async function lerXlsx(b: Uint8Array) {
       const valor = c.getElementsByTagName('v')[0]?.textContent ?? '';
       celulas[i] = tipo === 's' ? textos[Number(valor)] ?? ''
         : tipo === 'inlineStr' ? Array.from(c.getElementsByTagName('t')).map((t) => t.textContent ?? '').join('')
+        // Um número do Excel vem sempre com ponto decimal (12.345 é doze euros
+        // e pouco): passa a vírgula, para não ser lido como milhares.
+        : (!tipo || tipo === 'n') && /^-?\d+(\.\d+)?(e[+-]?\d+)?$/i.test(valor) ? String(Number(valor)).replace('.', ',')
         : valor;
     }
-    return Array.from(celulas, (x) => x ?? '');
-  });
+    linhas.push(Array.from(celulas, (x) => x ?? ''));
+  }
+  return linhas;
 }
 
 function descodificar(b: Uint8Array) {

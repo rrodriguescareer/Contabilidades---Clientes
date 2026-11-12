@@ -186,6 +186,14 @@ export function respostaTexto(c: ClienteResumo) {
   }
 }
 
+/** O dia limite de um período: o dia configurado do mês seguinte. */
+export function limiteDoPeriodo(periodo: string, dia: number) {
+  let a = Number(periodo.slice(0, 4));
+  let m = Number(periodo.slice(5, 7)) + 1;
+  if (m === 13) { a++; m = 1; }
+  return `${a}-${dois(m)}-${dois(dia)}`;
+}
+
 /** Limite sugerido: o dia configurado do mês seguinte ao último período em falta. */
 export function limiteSugerido(dia: number, periodos: string[]) {
   const hoje = hojeLisboa();
@@ -231,13 +239,21 @@ function lerTipo(v: string) {
   return 'OUTRO';
 }
 
+/** Uma data do calendário, ou nada: 31/02 não passa. */
+function dataReal(a: number, m: number, d: number) {
+  const data = new Date(Date.UTC(a, m - 1, d));
+  return a >= 2000 && a <= 2100 && data.getUTCMonth() === m - 1 && data.getUTCDate() === d ? `${a}-${dois(m)}-${dois(d)}` : null;
+}
+
+/** Aceita 2026-10-15, 15/10/2026, 15-10-26, com ou sem hora, e o número de
+    série do Excel. */
 export function lerData(v: string): string | null {
   const t = v.trim();
-  let m = /^(\d{4})-(\d{2})-(\d{2})/.exec(t);
-  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
-  m = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/.exec(t);
-  if (m) return `${m[3]}-${dois(Number(m[2]))}-${dois(Number(m[1]))}`;
-  if (/^\d{5}(\.\d+)?$/.test(t)) return new Date(Date.UTC(1899, 11, 30) + Math.floor(Number(t)) * 86400000).toISOString().slice(0, 10);
+  let m = /^(\d{4})-(\d{2})-(\d{2})(?:[T\s].*)?$/.exec(t);
+  if (m) return dataReal(Number(m[1]), Number(m[2]), Number(m[3]));
+  m = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4}|\d{2})(?:\s.*)?$/.exec(t);
+  if (m) return dataReal(m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3]), Number(m[2]), Number(m[1]));
+  if (/^\d{5}([.,]\d+)?$/.test(t)) return new Date(Date.UTC(1899, 11, 30) + Math.floor(Number(t.replace(',', '.'))) * 86400000).toISOString().slice(0, 10);
   return null;
 }
 
@@ -245,6 +261,8 @@ export function lerValor(v: string): number | null {
   let t = v.replace(/[€\s ]/g, '');
   if (!t) return null;
   if (t.includes(',') && t.includes('.')) t = t.lastIndexOf(',') > t.lastIndexOf('.') ? t.replace(/\./g, '').replace(',', '.') : t.replace(/,/g, '');
+  // «1.234» num ficheiro português são mil duzentos e trinta e quatro euros.
+  else if (/^-?\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');
   else t = t.replace(',', '.');
   const n = Number(t);
   return Number.isFinite(n) ? Math.round(n * 100) : null;
@@ -282,7 +300,9 @@ export function interpretarFolha(folha: string[][]): Importacao {
     const textoValor = cel(l, 'valor');
     const valor = textoValor ? lerValor(textoValor) : null;
     if (textoValor && valor === null) { recusadas.push({ linha, motivo: `valor inválido (${textoValor})` }); return; }
-    linhas.push({ descricao, tipo: lerTipo(cel(l, 'tipo')), numero: cel(l, 'numero').slice(0, 80) || null, data, valor_cents: valor, banco: cel(l, 'banco').slice(0, 80) || null });
+    // Sem coluna de tipo, uma linha com banco é um movimento bancário.
+    const tipo = colunas.tipo === undefined && cel(l, 'banco') ? 'MB' : lerTipo(cel(l, 'tipo'));
+    linhas.push({ descricao, tipo, numero: cel(l, 'numero').slice(0, 80) || null, data, valor_cents: valor, banco: cel(l, 'banco').slice(0, 80) || null });
   });
   return { linhas, recusadas, colunas: Object.keys(colunas) };
 }

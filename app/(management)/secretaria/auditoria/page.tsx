@@ -12,9 +12,9 @@ export default async function Auditoria({ searchParams }: { searchParams: Promis
   const { client } = await ownerSession();
   const pedido = await searchParams;
   const pagina = Math.max(1, Number(pedido.pagina) || 1);
-  const q = (pedido.q || '').trim().replace(/[%,()]/g, ' ').trim().slice(0, 60);
+  const q = (pedido.q || '').trim().replace(/["\\%]/g, '').slice(0, 60);
   let consulta = client.from('secretaria_auditoria').select('seq,quando,acao,autor,empresa,detalhe').order('seq', { ascending: false }).range((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA);
-  if (q) consulta = consulta.or(`acao.ilike.%${q}%,empresa.ilike.%${q}%,autor.ilike.%${q}%,detalhe.ilike.%${q}%`);
+  if (q) consulta = consulta.or(`acao.ilike."%${q}%",empresa.ilike."%${q}%",autor.ilike."%${q}%",detalhe.ilike."%${q}%"`);
   const [{ data }, { data: v }] = await Promise.all([consulta, client.rpc('secretaria_auditoria_verificar')]);
   const linhas = (data ?? []).slice(0, POR_PAGINA);
   const haMais = (data ?? []).length > POR_PAGINA;

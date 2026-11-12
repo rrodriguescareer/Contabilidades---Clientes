@@ -3,6 +3,7 @@ import { ownerSession } from '@/lib/auth';
 import { Avisos } from '@/components/consola';
 import { IniciarProcesso } from '@/components/secretaria/comum';
 import { MOTIVOS, PRAZOS, dataHoraPt, dataPt, hojeLisboa, limiteSugerido, respostaTexto, type ClienteResumo } from '@/lib/secretaria';
+import { TODOS, clientesResumo } from '@/lib/secretaria-dados';
 import s from '@/components/secretaria/secretaria.module.css';
 
 export const dynamic = 'force-dynamic';
@@ -18,11 +19,10 @@ function porque(c: ClienteResumo) {
 export default async function Comunicacoes({ searchParams }: { searchParams: Promise<{ erro?: string; mensagem?: string }> }) {
   const { client } = await ownerSession();
   const avisos = await searchParams;
-  const [{ data: lista }, { data: definicoes }] = await Promise.all([
-    client.rpc('secretaria_clientes_resumo', { desde: '2000-01-01', ate: '2099-12-01' }),
+  const [clientes, { data: definicoes }] = await Promise.all([
+    clientesResumo(client, TODOS),
     client.from('secretaria_definicoes').select('aprovar,dia_limite').maybeSingle(),
   ]);
-  const clientes = (lista ?? []) as ClienteResumo[];
   const semResposta = clientes.filter((c) => c.em_falta_total > 0 && (c.resposta === 'sem_resposta' || c.resposta === 'nao_obtida' || !c.processo))
     .sort((a, b) => (b.sem_resposta_dias ?? -1) - (a.sem_resposta_dias ?? -1));
   const emCurso = clientes.filter((c) => c.processo).sort((a, b) => String(a.processo!.proximo_envio ?? '9').localeCompare(String(b.processo!.proximo_envio ?? '9')));

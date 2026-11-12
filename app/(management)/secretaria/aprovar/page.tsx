@@ -3,7 +3,7 @@ import { ownerSession } from '@/lib/auth';
 import { Avisos } from '@/components/consola';
 import { Submeter } from '@/components/forms';
 import { Faixa } from '@/components/secretaria/comum';
-import { decidirEnvio, repetirEnvio } from '@/lib/secretaria-actions';
+import { decidirEnvio, descartarEnvio, repetirEnvio } from '@/lib/secretaria-actions';
 import { html } from '@/lib/email';
 import { ESTADOS_ENVIO, comporEmail, dataHoraPt, type PendenciaAberta } from '@/lib/secretaria';
 import s from '@/components/secretaria/secretaria.module.css';
@@ -111,8 +111,12 @@ export default async function PorAprovar({ searchParams }: { searchParams: Promi
                     <td data-rotulo="Tipo">{x.tipo === 'pedido' ? 'Pedido' : 'Insistência'}</td>
                     <td data-rotulo="Motivo" className={s.detalhe}>{x.erro ?? '—'}</td>
                     <td data-rotulo="" className={s.direita}>
-                      <form action={repetirEnvio}><input type="hidden" name="envio" value={x.id} /><input type="hidden" name="voltar" value="/secretaria/aprovar" />
-                        <Submeter className={s.acaoPequena} aDecorrer="A enviar…">Tentar novamente</Submeter></form>
+                      <div className={s.linhaAcoes}>
+                        <form action={descartarEnvio}><input type="hidden" name="envio" value={x.id} /><input type="hidden" name="voltar" value="/secretaria/aprovar" />
+                          <Submeter className={s.acaoPequena} aDecorrer="…">Descartar</Submeter></form>
+                        <form action={repetirEnvio}><input type="hidden" name="envio" value={x.id} /><input type="hidden" name="voltar" value="/secretaria/aprovar" />
+                          <Submeter className={s.acaoPequena} aDecorrer="A enviar…">Tentar novamente</Submeter></form>
+                      </div>
                     </td>
                   </tr>
                 ))}
